@@ -1,0 +1,48 @@
+DUP ME 4.1 — USE THIS SAME RELEASE ON BOTH COMPUTERS
+
+1. Extract the ZIP into a new folder.
+2. Use Python 3.10+ with Tkinter. No pip packages are needed.
+3. Run play.py in your IDE, or open a terminal in this folder:
+   macOS/Linux: python3 play.py
+   Windows:     py -3 play.py
+
+ONE COMPUTER + AI
+SINGLE PLAYER -> nickname -> AI level -> 2 STD rounds -> START.
+The private server and AI start automatically.
+
+TWO COMPUTERS
+Connect both to the same Wi-Fi or phone hotspot.
+A: MULTIPLAYER -> nickname -> HOST A GAME -> 2 STD rounds -> START HOSTING.
+B: MULTIPLAYER -> different nickname -> JOIN A GAME -> JOIN.
+B finds the host without typing an IP or port.
+Do not also start server.py when using HOST A GAME.
+
+FALLBACK
+A: server dashboard -> Save Connection File.
+Transfer the JSON file to B.
+B: MULTIPLAYER -> JOIN A GAME -> LOAD FILE -> select file -> JOIN.
+Both machines must still be on a network that permits local TCP traffic.
+
+SERVER
+When hosting, open SERVER DASHBOARD in the lobby (or SERV in the game).
+It appears inside the game window and shows online count and list.
+RESTART MATCH clears scores and restarts round 1 at once.
+END MATCH ends the match now; the winner is decided by current scores.
+EXIT on the game board: the player who exits always LOSES.
+Close dashboard = hide it. SERV on the game board reopens it.
+Close main host window = stop the server.
+
+TEST
+python3 self_test.py
+python3 -m tests.gui_smoke
+On Windows replace python3 with py -3.
+Also test the actual two physical computers before presenting.
+
+READ
+RUN_AND_TEST.md          full steps, hotspot advice, troubleshooting
+ docs/professor-notes.md network facts, structure, demo notes
+ docs/rubric.md          rubric mapping and feature evidence
+TEST_RESULTS.md         what was actually tested
+
+The professor awards the grade. Physical two-computer demonstration,
+creativity, and acceptance of extra features still require live review.

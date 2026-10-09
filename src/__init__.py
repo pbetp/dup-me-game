@@ -1,0 +1,2 @@
+"""Dup Me application package."""
+
