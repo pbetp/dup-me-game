@@ -25,8 +25,21 @@ from .match_report import review_rounds, export_csv
 from .network_client import NetworkClient
 from .pixel_ui import KEY_LABELS, BoardState, GameBoard, PALETTE, PixelCanvas, PracticeBoard
 from .sound import NotePlayer
+from .music import BackgroundMusic
+from .opening_screen import OpeningScreen
+from .boss_ui import BossBoard, BossState
+from .art_screen import ArtScreen
 
 SETUP_SCREENS = ("solo", "host", "join")
+MODE_LABELS = {"versus": "1V1 BATTLE", "boss": "BOSS CO-OP"}
+MODE_HINTS = {
+    "versus": "1V1: take turns - most points wins.",
+    "boss": "CO-OP: beat THE DISSONANT together.",
+}
+# Choice buttons drawn over the menu artwork ("back" is sampled from each artwork).
+SINGLE_CHOICE = {"border": "#1f78ff", "hover": "#70e9ff", "off": "#071a4a", "on": "#5cf2ff", "ink": "#04102e"}
+PRACTICE_CHOICE = {"border": "#8a5cff", "hover": "#c9a4ff", "off": "#171354", "on": "#5cf2ff", "ink": "#04102e"}
+MODE_CHOICE = {"border": "#1f78ff", "hover": "#70e9ff", "off": "#071a4a", "on": "#ff6ad5", "ink": "#2a0630"}
 
 
 class ClientWindow:
@@ -46,6 +59,9 @@ class ClientWindow:
         self.player_id: str | None = None
         self.nickname = nickname
         self.mode, self.host, self.port = mode, host, port
+        # Multiplayer style: "versus" (1v1) or "boss" (co-op). The host's choice wins on join.
+        self.play_mode = "versus"
+        self.boss_state = BossState()
         self.servers = ([{"name": "Configured server", "host": host, "port": port}] if host else [])
         self.dashboard: ServerWindow | None = None
         self.local_game = LocalGame()
@@ -60,9 +76,11 @@ class ClientWindow:
         self.round_number = 0
         self.input_enabled = self.preview_mode = False
         self.board: GameBoard | None = None
+        self.opening_scene: OpeningScreen | None = None
         self.state = BoardState()
         self.audio = NotePlayer()
         self.audio.instrument = instrument
+        self.music = BackgroundMusic()
         self.flashes = True
         self.practice: PracticeSession | None = None
         self.practice_level, self.practice_length = "medium", LENGTH_OPTIONS[0]
@@ -93,6 +111,7 @@ class ClientWindow:
         self.container.pack(fill="both", expand=True)
         self._configure_styles()
         self.show_preview() if preview else self.show_menu()
+        self.music.start()
         self._poll_job = self.root.after(40, self._poll_events)
 
     def _font(self, size: int, bold: bool = False) -> tkfont.Font:
@@ -125,6 +144,7 @@ class ClientWindow:
         style = ttk.Style(self.root)
         style.configure("Arcade.TButton", padding=(self._px(18), self._px(13)))
         style.configure("Small.Arcade.TButton", padding=(self._px(10), self._px(6)))
+        style.configure("Choice.TRadiobutton", padding=(self._px(6), self._px(7)))
         self._wrapped = [(w, base) for w, base in self._wrapped if w.winfo_exists()]
         for widget, base in self._wrapped:
             widget.configure(wraplength=self._px(base))
@@ -151,6 +171,22 @@ class ClientWindow:
         style.configure("Arcade.TCheckbutton", background=PALETTE["panel"],
                         foreground=PALETTE["text"], font=self._font(12), padding=8)
         style.map("Arcade.TCheckbutton", background=[("active", PALETTE["panel_light"])])
+        # Use the clam button surface so selection is visible on every platform,
+        # including macOS, where indicator-less classic radio buttons look alike.
+        style.layout("Choice.TRadiobutton", style.layout("TButton"))
+        style.configure("Choice.TRadiobutton", font=self._font(12, True), padding=(6, 7),
+                        anchor="center", background="#133369", foreground=PALETTE["text"],
+                        borderwidth=2, relief="flat", bordercolor="#133369",
+                        lightcolor="#133369", darkcolor="#133369", focuscolor=PALETTE["pink"])
+        style.map("Choice.TRadiobutton",
+                  background=[("disabled", "selected", "#315864"), ("disabled", "#14223d"),
+                              ("selected", PALETTE["cyan"]), ("active", "#214986")],
+                  foreground=[("disabled", "#90abd2"), ("selected", PALETTE["panel"])])
+        for option in ("bordercolor", "lightcolor", "darkcolor"):
+            style.map("Choice.TRadiobutton", **{
+                option: [("disabled", "selected", "#315864"), ("disabled", "#14223d"),
+                         ("selected", PALETTE["cyan"]), ("active", PALETTE["border"])]})
+        style.configure("Instrument.Choice.TRadiobutton", font=self._font(11, True))
 
     def _label(self, master, text="", size=13, color=None, **kwargs):
         wrap = kwargs.pop("wraplength", None)
@@ -172,6 +208,7 @@ class ClientWindow:
         self._pressed.clear()
         for child in self.container.winfo_children():
             child.destroy()
+        self.opening_scene = None
 
     def _scene(self, caption: str) -> tk.Frame:
         self._clear()
@@ -213,16 +250,28 @@ class ClientWindow:
             self.connect_button = self._button(actions, start_text, self.connect)
             self.connect_button.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
+    def _choice_button(self, master, text, value, variable: tk.Variable,
+                       command=None, style="Choice.TRadiobutton") -> ttk.Radiobutton:
+        button = ttk.Radiobutton(master, value=value, variable=variable, command=command,
+                                 style=style, width=len(text) + 2, cursor="hand2", takefocus=True)
+
+        def update_marker(*_args):
+            marker = "\u2713" if str(variable.get()) == str(value) else " "
+            button.configure(text=f"{marker} {text}")
+
+        # The checkmark makes the choice explicit without relying on color alone.
+        # Watching the variable also covers defaults and programmatic changes.
+        trace = variable.trace_add("write", update_marker)
+        button.bind("<Destroy>", lambda _event: variable.trace_remove("write", trace))
+        update_marker()
+        return button
+
     def _choice_row(self, panel: tk.Frame, title: str, options, variable: tk.Variable) -> None:
         self._label(panel, title, 11, PALETTE["cyan"]).pack(anchor="w", pady=(10, 4))
         row = tk.Frame(panel, bg=PALETTE["panel"])
         row.pack(fill="x")
         for index, (value, text) in enumerate(options):
-            button = tk.Radiobutton(
-                row, text=text, value=value, variable=variable, indicatoron=False,
-                font=self._font(12, True), pady=7, bd=0, highlightthickness=0, cursor="hand2",
-                bg="#133369", fg=PALETTE["text"], selectcolor=PALETTE["blue"],
-                activebackground="#214986", activeforeground=PALETTE["text"], disabledforeground="#647995")
+            button = self._choice_button(row, text, value, variable)
             button.pack(side="left", fill="x", expand=True, padx=(6 if index else 0, 0))
             self._busy_widgets.append(button)
 
@@ -247,26 +296,70 @@ class ClientWindow:
         self._choice_row(panel, "ROUNDS · STANDARD OR EXTENDED", options, self.rounds_var)
 
     def show_menu(self, message: str = "") -> None:
-        panel = self._menu("menu", "THE PATTERN MEMORY ARCADE", "MAIN MENU")
-        for text, command in (("SINGLE PLAYER", lambda: self.show_setup("solo")),
-                              ("MULTIPLAYER", self.show_multiplayer),
-                              ("PRACTICE", self.show_practice_setup),
-                              ("SETTINGS", self.show_settings),
-                              ("QUIT", self.close)):
-            self._button(panel, text, command).pack(fill="x", pady=(0, 8))
-        self.join_status = self._label(panel, message, 10, PALETTE["danger"], wraplength=440)
-        self.join_status.pack(fill="x")
+        self.current_screen = "menu"
+        self.preview_mode = self.input_enabled = False
+        self.connect_button = self.nickname_entry = self.server_list = None
+        self._busy_widgets = []
+        self._clear()
+        self.opening_scene = OpeningScreen(
+            self.container,
+            actions=(lambda: self.show_setup("solo"), self.show_multiplayer,
+                     self.show_practice_setup, self.show_settings, self.close),
+            can_activate=lambda: self.dialog is None and not self._closed,
+        )
+        self.opening_scene.pack(fill="both", expand=True)
+        self.join_status = self._label(self.opening_scene, message, 10,
+                                       PALETTE["danger"], wraplength=760)
+        if message:
+            self.join_status.place(relx=.5, rely=.985, anchor="s")
+
+    def _art_menu(self, screen: str, art: str) -> ArtScreen:
+        """A menu page that is the approved artwork, with its painted controls made live."""
+        self.current_screen = screen
+        self.preview_mode = self.input_enabled = False
+        self.connect_button = self.nickname_entry = self.server_list = None
+        self._busy_widgets = []
+        self._clear()
+        scene = ArtScreen(self.container, art, can_animate=lambda: self.dialog is None and not self._closed)
+        scene.pack(fill="both", expand=True)
+        scene.focus_set()
+        return scene
+
+    def _art_nickname(self, scene: ArtScreen, box) -> None:
+        self.nickname_entry = scene.entry(box, size=17)
+        self.nickname_entry.insert(0, self.nickname)
+        self.nickname_entry.focus_set()
 
     def show_multiplayer(self, message: str = "") -> None:
-        panel = self._menu("multiplayer", "MULTIPLAYER", "PLAY WITH A FRIEND")
-        self._nickname_field(panel)
-        self._label(panel, "Both computers must be on the same Wi-Fi or phone hotspot.",
-                    11, PALETTE["muted"], wraplength=440).pack(pady=(12, 8))
-        for text, mode in (("HOST A GAME", "host"), ("JOIN A GAME", "join")):
-            self._button(panel, text, lambda mode=mode: self._multiplayer_next(mode)).pack(fill="x", pady=(0, 8))
-        self._footer(panel, message)
+        scene = self._art_menu("multiplayer", "multiplayer-rooftop-jam.gif")
+        self._art_nickname(scene, (877, 305, 1215, 342))
+        self.play_mode_var = tk.StringVar(value=self.play_mode)
+        back = scene.sample(1200, 365)
+        # The painted Wi-Fi hint makes way for the 1V1 / BOSS CO-OP switch.
+        scene.patch((866, 349, 1226, 387), back)
+
+        self._busy_widgets += scene.choices(self.play_mode_var, [
+            ("versus", MODE_LABELS["versus"], (874, 352, 1043, 384)),
+            ("boss", MODE_LABELS["boss"], (1051, 352, 1220, 384)),
+        ], dict(MODE_CHOICE, back=back))
+
+        def show_hint(*_args):
+            # The status line explains the chosen mode until it has an error to show.
+            if self.join_status.cget("text") in MODE_HINTS.values():
+                self.join_status.configure(text=MODE_HINTS[self.play_mode_var.get()], fg=PALETTE["muted"])
+
+        trace = self.play_mode_var.trace_add("write", show_hint)
+        scene.bind("<Destroy>", lambda event: event.widget is scene
+                   and self.play_mode_var.trace_remove("write", trace), add="+")
+        self.join_status = scene.status(866, 1226, 561, message or MODE_HINTS[self.play_mode], size=11,
+                                        color=PALETTE["danger"] if message else PALETTE["muted"])
+        scene.button((858, 390, 1228, 462), lambda: self._multiplayer_next("host"), PALETTE["cyan"])
+        scene.button((858, 472, 1228, 550), lambda: self._multiplayer_next("join"), PALETTE["pink"])
+        scene.button((865, 571, 1220, 631), self._go_back, PALETTE["cyan"])
 
     def _multiplayer_next(self, mode: str) -> None:
+        if hasattr(self, "play_mode_var"):
+            self.play_mode = self.play_mode_var.get()
         if self._read_nickname():
             self.show_setup(mode)
 
@@ -274,14 +367,35 @@ class ClientWindow:
         """Last step before playing: solo (vs AI), host, or join."""
         self.mode = mode
         if mode == "solo":
-            panel = self._menu("solo", "SINGLE PLAYER", "PLAY VS DUPBOT")
-            self._nickname_field(panel)
+            scene = self._art_menu("solo", "single-orbit-dojo.gif")
+            self._art_nickname(scene, (797, 315, 1222, 349))
             self.nickname_entry.bind("<Return>", lambda _event: self.connect())
+            scene.default_action = self.connect
+            colors = dict(SINGLE_CHOICE, back=scene.sample(1000, 470))
             self.difficulty_var = tk.StringVar(value=self.difficulty)
-            self._choice_row(panel, "AI LEVEL", [(level, level.upper()) for level in ("easy", "medium", "hard")],
-                             self.difficulty_var)
-            self._rounds_choice(panel)
-            self._footer(panel, message, "START  >")
+            self._busy_widgets += scene.choices(self.difficulty_var, [
+                ("easy", "EASY", (790, 399, 930, 447)), ("medium", "MEDIUM", (941, 399, 1080, 447)),
+                ("hard", "HARD", (1091, 399, 1230, 447))], colors)
+            self.rounds_var = tk.IntVar(value=self.total_rounds)
+            boxes = ((790, 496, 876, 542), (885, 496, 944, 542), (953, 496, 1013, 542),
+                     (1022, 496, 1082, 542), (1091, 496, 1156, 542), (1164, 496, 1230, 542))
+            self._busy_widgets += scene.choices(self.rounds_var, [
+                (rounds, f"{rounds} STD" if rounds == DEFAULT_ROUNDS else str(rounds), box)
+                for rounds, box in zip(ROUND_OPTIONS, boxes)], colors)
+            self.join_status = scene.status(790, 1230, 557, message, size=11)
+            scene.button((785, 573, 986, 641), self._go_back, PALETTE["pink"])
+            self.connect_button = scene.button((1001, 573, 1232, 641), self.connect, PALETTE["yellow"])
+        elif mode == "host" and self.play_mode == "boss":
+            panel = self._menu("host", "BOSS CO-OP", "HOST A BOSS FIGHT")
+            self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
+            self._label(panel, "THE DISSONANT has 80 HP. You and your ally each have 8 HP. "
+                        "Every phrase the boss plays each of you a melody: repeat yours from memory. "
+                        "Correct key = 1 boss damage. Wrong or missed key = 1 self damage.",
+                        11, PALETTE["text"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
+            self._label(panel, "Your friend picks MULTIPLAYER > BOSS CO-OP > JOIN A GAME. "
+                        "Keep this window open; do not also run server.py.",
+                        11, PALETTE["muted"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
+            self._footer(panel, message, "START HOSTING  >")
         elif mode == "host":
             panel = self._menu("host", "MULTIPLAYER", "HOST A GAME")
             self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
@@ -291,7 +405,8 @@ class ClientWindow:
                         11, PALETTE["muted"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
             self._footer(panel, message, "START HOSTING  >")
         else:
-            panel = self._menu("join", "MULTIPLAYER", "JOIN A GAME")
+            panel = self._menu("join", "BOSS CO-OP" if self.play_mode == "boss" else "MULTIPLAYER",
+                               "JOIN A BOSS FIGHT" if self.play_mode == "boss" else "JOIN A GAME")
             self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
             self._label(panel, "NEARBY GAMES", 11, PALETTE["cyan"]).pack(anchor="w", pady=(10, 4))
             self.server_list = tk.Listbox(panel, height=3, bg="#030b20", fg=PALETTE["text"],
@@ -381,14 +496,18 @@ class ClientWindow:
             host, port = self.servers[selection[0]]["host"], self.servers[selection[0]]["port"]
         else:
             host, port = "127.0.0.1", self.port
-            self.total_rounds = self.rounds_var.get()
+            if mode == "solo":
+                self.play_mode = "versus"
+            if self.play_mode != "boss":
+                self.total_rounds = self.rounds_var.get()
         if mode == "solo":
             self.difficulty = self.difficulty_var.get()
         self._stop_connection()
         self.events = queue.Queue()
         if mode in ("host", "solo"):
             try:
-                port = self.local_game.start(solo=mode == "solo", port=port, total_rounds=self.total_rounds)
+                port = self.local_game.start(solo=mode == "solo", port=port, total_rounds=self.total_rounds,
+                                             mode=self.play_mode)
             except OSError as exc:
                 self.join_status.configure(text=listen_error(port, exc), fg=PALETTE["danger"])
                 return
@@ -428,9 +547,13 @@ class ClientWindow:
         self._refresh_player_list()
         self.lobby_status = self._label(panel, message, 12, PALETTE["cyan"], wraplength=435)
         self.lobby_status.pack(pady=(8, 8))
-        self._label(panel, f"{self.total_rounds} rounds · The match starts when two players join.", 11, PALETTE["muted"]).pack()
+        rules = ("BOSS CO-OP · The fight starts when your ally joins." if self.play_mode == "boss"
+                 else f"{self.total_rounds} rounds · The match starts when two players join.")
+        self._label(panel, rules, 11, PALETTE["muted"]).pack()
         if self.mode == "host" and self.local_game.server:
-            self._label(panel, "Friend: choose Join a game → START on the same network.", 11, PALETTE["yellow"], wraplength=620).pack(pady=(10, 0))
+            friend = ("Friend: MULTIPLAYER → BOSS CO-OP → JOIN A GAME on the same network." if self.play_mode == "boss"
+                      else "Friend: choose Join a game → START on the same network.")
+            self._label(panel, friend, 11, PALETTE["yellow"], wraplength=620).pack(pady=(10, 0))
             self._button(panel, "SERVER DASHBOARD / RESET", self.show_server_dashboard).pack(fill="x", pady=(8, 0))
         self._button(panel, "DISCONNECT", self.return_to_join).pack(fill="x", pady=(8, 0))
 
@@ -467,6 +590,44 @@ class ClientWindow:
         self._refresh_board()
         self.board.focus_set()
 
+    def show_boss_game(self) -> None:
+        self.current_screen = "boss_game"
+        self.preview_mode = False
+        self._clear()
+        actions = {
+            "note": self.press_color, "settings": self.show_settings,
+            "help": self.show_help, "fullscreen": self.toggle_fullscreen, "exit": self.force_exit,
+        }
+        if self.mode == "host" and self.local_game.server:
+            actions["server"] = self.show_server_dashboard
+        # Keys are gated by BossState.can_play, so input stays switched on here.
+        self.input_enabled = True
+        self.board = BossBoard(self.container, self.boss_state, actions)
+        self.board.pack(fill="both", expand=True)
+        self._refresh_board()
+        self.board.focus_set()
+
+    def _boss_phrase(self, event: dict) -> None:
+        self.turn_id = event.get("turn_id", "")
+        self._cancel_practice_jobs()
+        self.boss_state.begin(event)
+        if self.current_screen != "boss_game":
+            self.show_boss_game()
+        if self.boss_state.phase == "show":
+            # The boss plays this player's melody note by note, revealing each one.
+            gap = round(float(event.get("note_gap", 0.6)) * 1000)
+            for index, note in enumerate(self.boss_state.notes.get(self.boss_state.me, [])):
+                self._practice_after(1000 + index * gap, lambda note=note, index=index: self._boss_note(note, index))
+        self._refresh_board()
+
+    def _boss_note(self, note: str, index: int) -> None:
+        if self.boss_state.phase != "show" or self.board is None:
+            return
+        self.boss_state.shown = index + 1
+        self.audio.play(note)
+        self.board.flash(note, force=True)
+        self._refresh_board()
+
     def show_preview(self) -> None:
         self._stop_connection()
         self.events = queue.Queue()
@@ -483,27 +644,22 @@ class ClientWindow:
     # ---- Practice: offline, no server; every note is judged like a typed letter ----
 
     def show_practice_setup(self) -> None:
-        panel = self._menu("practice", "PRACTICE", "PRACTICE BY EAR")
-        self._label(panel, "Hear a short melody and play it back. The first note is shown, so find "
-                    "the rest by interval. Every note is scored like a typing test: "
-                    "accuracy, pitch precision and speed.",
-                    11, PALETTE["muted"], wraplength=440, justify="left", anchor="w").pack(fill="x")
+        scene = self._art_menu("practice", "practice-meteor-rehearsal.gif")
+        scene.default_action = self.start_practice
+        colors = dict(PRACTICE_CHOICE, back=scene.sample(300, 420))
+        columns = ((82, 228), (239, 384), (393, 538))
         self.practice_level_var = tk.StringVar(value=self.practice_level)
-        self._choice_row(panel, "LEVEL · NOTES TO FIND AFTER THE FIRST",
-                         [(level, f"{level.upper()} {LEVELS[level][0] - 1}") for level in LEVELS], self.practice_level_var)
+        scene.choices(self.practice_level_var, [
+            (level, f"{level.upper()} {LEVELS[level][0] - 1}", (x0, 352, x1, 400))
+            for level, (x0, x1) in zip(LEVELS, columns)], colors)
         self.practice_length_var = tk.IntVar(value=self.practice_length)
-        self._choice_row(panel, "MELODIES", [(count, str(count)) for count in LENGTH_OPTIONS], self.practice_length_var)
-        self._label(panel, "EASY: nearby white keys · MEDIUM: all white keys · HARD: all 17 keys",
-                    10, PALETTE["muted"], wraplength=440).pack(fill="x", pady=(10, 0))
+        scene.choices(self.practice_length_var, [
+            (count, str(count), (x0, 455, x1, 504)) for count, (x0, x1) in zip(LENGTH_OPTIONS, columns)], colors)
         silent = not self.audio.available or self.audio.muted or self.audio.volume == 0
-        self.join_status = self._label(panel, "Sound is off - unmute in SETTINGS (Ctrl+M) to hear melodies."
-                                       if silent else "", 10, PALETTE["danger"], wraplength=440)
-        self.join_status.pack(fill="x", pady=(6, 4))
-        actions = tk.Frame(panel, bg=PALETTE["panel"])
-        actions.pack(fill="x")
-        self._button(actions, "<  BACK", self._go_back).pack(side="left", fill="x", expand=True)
-        ttk.Button(actions, text="START  >", command=self.start_practice,
-                   style="Go.Arcade.TButton").pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self.join_status = scene.status(82, 538, 521, "Sound is off - unmute in SETTINGS (Ctrl+M)."
+                                        if silent else "", size=11)
+        scene.button((82, 538, 292, 598), self._go_back, PALETTE["cyan"])
+        scene.button((300, 538, 538, 598), self.start_practice, PALETTE["yellow"])
 
     def start_practice(self) -> None:
         if self.current_screen == "practice":
@@ -693,7 +849,10 @@ class ClientWindow:
         panel = self._scene("MATCH COMPLETE")
         panel.place_configure(rely=.6)
         result = event.get("result", "draw")
+        boss = event.get("mode") == "boss"
         title = {"win": "YOU WIN", "loss": "YOU LOST", "draw": "DRAW"}.get(result, "MATCH OVER")
+        if boss:
+            title = "VICTORY" if result == "win" else "DEFEAT"
         color = {"win": PALETTE["green"], "loss": PALETTE["pink"], "draw": PALETTE["cyan"]}.get(result, PALETTE["text"])
         reason = event.get("reason", "")
         self.scores = event.get("scores", self.scores)
@@ -716,7 +875,7 @@ class ClientWindow:
                 top = 94
             for index, row in enumerate(self.scores[:2]):
                 y = top + index * 60
-                won = winner is not None and row.get("id") == winner
+                won = (winner is not None and row.get("id") == winner) or (boss and result == "win")
                 accent = PALETTE["green"] if won else "#2b4677"
                 card.panel(4, y, width - 14, 54, accent, PALETTE["panel_light"] if won else None)
                 name = str(row.get("nickname", "PLAYER"))
@@ -725,6 +884,8 @@ class ClientWindow:
                            center=False)
                 if row.get("id") == self.player_id:
                     card.label(24 + len(name) * 18 + 10, y + 20, "YOU", 2, PALETTE["cyan"], center=False)
+                if boss:
+                    card.label(width - 130, y + 20, "DMG", 2, PALETTE["muted"])
                 card.pixels(width - 52, y + 13, str(row.get("score", 0)), 4, PALETTE["yellow"], center=True)
 
         card.bind("<Configure>", draw)
@@ -736,9 +897,10 @@ class ClientWindow:
         self.result_status.pack(pady=6)
         actions = tk.Frame(panel, bg=PALETTE["panel"])
         actions.pack(fill="x")
-        self._button(actions, "ROUND REVIEW", self.show_match_review).pack(side="left", fill="x", expand=True)
+        if not boss:
+            self._button(actions, "ROUND REVIEW", self.show_match_review).pack(side="left", fill="x", expand=True)
         self._button(actions, "LEAVE MATCH", self.return_to_join).pack(side="left", fill="x", expand=True,
-                                                                       padx=(8, 0))
+                                                                       padx=(0 if boss else 8, 0))
 
     def show_match_review(self) -> None:
         if self.current_screen != "results":
@@ -796,6 +958,8 @@ class ClientWindow:
             self.nickname = event["nickname"]
             self.state.welcome_name = self.nickname
             self.total_rounds = int(event.get("total_rounds", DEFAULT_ROUNDS))
+            self.play_mode = "versus" if self.mode == "solo" else event.get("mode", "versus")
+            self.boss_state = BossState(me=self.player_id)
             self.show_lobby()
             if self.mode == "solo":
                 self.local_game.start_bot(self.nickname, self.difficulty)
@@ -806,6 +970,25 @@ class ClientWindow:
             self._close_dialog()
             self.round_history = []
             self.scores = event.get("players", [])
+            if event.get("mode") == "boss":
+                self.play_mode = "boss"
+                self.boss_state = BossState(me=self.player_id or "")
+                self.boss_state.start(event)
+                self.show_boss_game()
+        elif event_type == mt.BOSS_PHRASE:
+            self._boss_phrase(event)
+        elif event_type == mt.BOSS_FEEDBACK and isinstance(self.board, BossBoard):
+            self.boss_state.feedback(event)
+            self.scores = self.boss_state.players
+            self._refresh_board()
+        elif event_type == mt.BOSS_RESULT and isinstance(self.board, BossBoard):
+            self._cancel_practice_jobs()
+            self.boss_state.result(event)
+            self.scores = self.boss_state.players
+            self._refresh_board()
+        elif event_type == mt.TIMER_UPDATE and isinstance(self.board, BossBoard):
+            self.boss_state.remaining = max(0, int(event.get("remaining", 0)))
+            self._refresh_board()
         elif event_type == mt.ROUND_START:
             self.preview_mode = False
             self.turn_id = event.get("turn_id", "")
@@ -876,10 +1059,15 @@ class ClientWindow:
             if self.current_screen in SETUP_SCREENS:
                 self._join_busy(False)
         elif event_type == "servers_found" and self.current_screen == "join":
-            self.servers = event["servers"]
+            # List only games of the chosen mode. Connection files carry no mode;
+            # the host's mode is applied on WELCOME.
+            found = event["servers"]
+            self.servers = [row for row in found if row.get("mode", self.play_mode) == self.play_mode]
             self._join_busy(False)
             self._display_servers()
+            other = MODE_LABELS["boss" if self.play_mode == "versus" else "versus"]
             message = ("Host found. Choose your game and press START." if self.servers else
+                       f"Only a {other} game was found. Go BACK and pick {other} to join it." if found else
                        "No host found. Start Host and play on the other computer, then FIND GAMES again; or load its connection file.")
             self.join_status.configure(text=message, fg=PALETTE["cyan"])
             if len(self.servers) == 1 and event.get("auto_connect"):
@@ -903,7 +1091,7 @@ class ClientWindow:
     def _set_status(self, message: str, error: bool = False) -> None:
         color = PALETTE["danger"] if error else PALETTE["cyan"]
         if self.board:
-            self.state.status = message
+            (self.boss_state if isinstance(self.board, BossBoard) else self.state).status = message
             self._refresh_board()
         else:
             widget = "join_status" if self.current_screen in SETUP_SCREENS else {
@@ -938,6 +1126,9 @@ class ClientWindow:
             else:
                 self._set_status("20 notes - use UNDO or CLEAR")
             return
+        if getattr(self, "current_screen", "") == "boss_game":
+            self._boss_press(color)
+            return
         if self.network is None:
             return
         limit = MAX_PATTERN_STEPS if self.phase == "create" else self.state.pattern_length
@@ -950,6 +1141,17 @@ class ClientWindow:
                 self.audio.play(color)
                 if self.board:
                     self.board.flash(color)
+
+    def _boss_press(self, color: str) -> None:
+        boss = self.boss_state
+        if self.network is None or not boss.can_play:
+            return
+        if self.network.send({"type": mt.REPEAT_STEP, "color": color, "turn_id": self.turn_id}):
+            boss.sent += 1
+            self.audio.play(color)
+            if self.board:
+                self.board.flash(color)
+            self._refresh_board()
 
     def _key_press(self, event: tk.Event) -> None:
         if event.widget.winfo_toplevel() != self.root or self.dialog is not None:
@@ -986,17 +1188,19 @@ class ClientWindow:
         self._release_jobs[key] = self.root.after_idle(release)
 
     def toggle_mute(self) -> None:
-        if self.audio.volume == 0:
-            # Slider was dragged to zero: the speaker brings the sound back.
-            self.audio.volume, self.audio.muted = 50, False
-        else:
-            self.audio.muted = not self.audio.muted
+        # Piano and music now have independent levels; master mute preserves both.
+        self.audio.muted = not self.audio.muted
+        self.music.set_muted(self.audio.muted)
         self._refresh_board()
 
     def set_volume(self, value: int) -> None:
         self.audio.volume = value
         if value > 0:
             self.audio.muted = False
+        self.music.set_muted(self.audio.muted)
+
+    def set_music_volume(self, value: int) -> None:
+        self.music.set_volume(value)
 
     def toggle_fullscreen(self, _event=None) -> str:
         self.root.attributes("-fullscreen", not self.root.attributes("-fullscreen"))
@@ -1030,7 +1234,7 @@ class ClientWindow:
         self._set_width(self.dialog, width)
         self.dialog.lift()
         self._label(panel, title, 22, PALETTE["cyan"]).pack(anchor="w", pady=(0, 16))
-        if self.current_screen == "game" and not self.preview_mode:
+        if self.current_screen in ("game", "boss_game") and not self.preview_mode:
             self._label(panel, "LIVE MATCH · The round timer keeps running.", 11,
                         PALETTE["yellow"], wraplength=455).pack(anchor="w", pady=(0, 12))
         self._grab_dialog()
@@ -1061,73 +1265,72 @@ class ClientWindow:
         self._refresh_board()
 
     def show_settings(self) -> None:
-        panel = self._new_dialog("SETTINGS")
-        if panel is None:
+        """Full-window settings page: the approved artwork with its controls made live."""
+        if self.dialog:
+            self.dialog.lift()
             return
-        self._label(panel, "SOUND", 12, PALETTE["yellow"]).pack(anchor="w")
-        sound = tk.Frame(panel, bg=PALETTE["panel"])
-        sound.pack(fill="x", pady=(6, 14))
-        speaker = PixelCanvas(sound, width=64, height=44, cursor="hand2")
-        speaker.pack(side="left")
+        self._pressed.clear()
+        scene = ArtScreen(self.root, "settings-orbital-mixer.gif")
+        scene.place(x=0, y=0, relwidth=1, relheight=1)
+        self.dialog = scene
+        scene.default_action = self._close_dialog
 
-        def draw_speaker():
-            speaker.delete("all")
-            silent = self.audio.muted or self.audio.volume == 0
-            speaker.rect(0, 0, 64, 44, PALETTE["panel_light"])
-            speaker.icon(32, 22, "speaker_off" if silent else "speaker", 3, PALETTE["cyan"])
-            if silent:
-                for step in range(11):
-                    speaker.rect(7 + step * 3, 5 + step * 3, 4, 4, PALETTE["pink"])
+        def draw_speakers(screen: ArtScreen) -> None:
+            # A pink slash across a painted speaker shows it is silent.
+            for (x0, y0, x1, y1), silent in (((338, 252, 400, 282), self.audio.muted),
+                                             ((338, 327, 400, 357), self.audio.muted or self.music.volume == 0)):
+                if silent:
+                    for step in range(10):
+                        screen.rect(x0 + step * (x1 - x0 - 6) / 9, y0 + step * (y1 - y0 - 6) / 9, 6, 6,
+                                    PALETTE["pink"])
 
-        def volume(value):
-            self.set_volume(int(float(value)))
-            draw_speaker()
-
-        slider = tk.Scale(sound, from_=0, to=100, resolution=5, orient="horizontal", showvalue=False,
-                          command=volume, bg=PALETTE["cyan"], troughcolor="#163568",
-                          activebackground="#ffffff", highlightthickness=0, bd=0,
-                          sliderlength=26, width=18, sliderrelief="flat")
-
-        def toggle(_event=None):
+        def toggle_piano() -> None:
             self.toggle_mute()
-            slider.set(self.audio.volume)
-            draw_speaker()
+            scene.refresh()
 
-        speaker.bind("<Button-1>", toggle)
-        slider.set(self.audio.volume)
-        slider.pack(side="left", fill="x", expand=True, padx=(14, 0))
-        slider.bind("<ButtonRelease-1>", lambda _event: self.audio.play("c4"))
-        draw_speaker()
-        self.volume_slider = slider
+        def toggle_music() -> None:
+            if self.music.volume:
+                self._music_restore = self.music.volume
+                self.music_slider.set(0)
+            else:
+                self.music_slider.set(getattr(self, "_music_restore", 0) or 18)
 
-        self._label(panel, "INSTRUMENT", 12, PALETTE["yellow"]).pack(anchor="w")
-        choices = tk.Frame(panel, bg=PALETTE["panel"])
-        choices.pack(fill="x", pady=(6, 12))
-        choices.columnconfigure((0, 1), weight=1, uniform="instrument")
+        def volume(value: int) -> None:
+            # Initializing the slider must not undo an existing master mute.
+            if value != self.audio.volume:
+                self.set_volume(value)
+
+        scene.drawers.append(draw_speakers)
+        scene.button((329, 245, 410, 289), toggle_piano, PALETTE["cyan"])
+        self.volume_slider = scene.slider((422, 246, 954, 287), (440, 258, 934, 276), PALETTE["cyan"],
+                                          self.audio.volume, volume, on_release=lambda: self.audio.play("c4"),
+                                          clear=(427, 251, 949, 283))
+        scene.button((329, 320, 410, 364), toggle_music, PALETTE["pink"])
+        self.music_slider = scene.slider((422, 321, 954, 360), (440, 333, 934, 351), "#ff4fd8",
+                                         self.music.volume, self.set_music_volume, step=1,
+                                         clear=(427, 326, 949, 353))
+        if not self.music.available or not self.audio.available:
+            scene.patch((420, 362, 720, 379), scene.sample(700, 371))
+            scene.status(420, 940, 370, "Audio output unavailable; visual feedback still works."
+                         if not self.audio.available else "Background music unavailable; piano still works.",
+                         size=10, color=PALETTE["yellow"])
+        # Our tick follows the chosen instrument, so the painted one is covered.
+        scene.patch((336, 412, 366, 443), scene.sample(370, 428))
         self.instrument_var = tk.StringVar(value=self.audio.instrument)
-        for index, name in enumerate(INSTRUMENTS):
-            tk.Radiobutton(
-                choices, text=name.upper(), value=name, variable=self.instrument_var, indicatoron=False,
-                command=lambda: self._select_instrument(self.instrument_var.get()),
-                font=self._font(11, True), pady=7, bd=0, highlightthickness=0, cursor="hand2",
-                bg="#133369", fg=PALETTE["text"], selectcolor=PALETTE["blue"],
-                activebackground="#214986", activeforeground=PALETTE["text"],
-            ).grid(row=index // 2, column=index % 2, sticky="ew", padx=(0 if index % 2 == 0 else 6, 0), pady=(0, 6))
+        boxes = ((325, 401, 636, 453), (644, 401, 954, 453), (325, 464, 636, 518), (644, 464, 954, 518))
+        self.instrument_buttons = scene.choices(
+            self.instrument_var, [(name, name.upper(), box) for name, box in zip(INSTRUMENTS, boxes)],
+            {"on": PALETTE["cyan"]}, command=lambda: self._select_instrument(self.instrument_var.get()),
+            style="marker")
         flashes = tk.BooleanVar(value=self.flashes)
 
-        def apply_options():
+        def apply_options() -> None:
             self.flashes = flashes.get()
             self._refresh_board()
 
-        ttk.Checkbutton(panel, text="Flash my keys when I play", variable=flashes,
-                        command=apply_options, style="Arcade.TCheckbutton").pack(anchor="w")
-        if not self.audio.available:
-            self._label(panel, "Audio output unavailable on this system.\nVisual feedback remains enabled.",
-                        10, PALETTE["yellow"]).pack(pady=4)
-        self._label(panel, "F11: fullscreen   Ctrl+M: mute   F1: help   Esc: close",
-                    10, PALETTE["muted"]).pack(pady=(8, 10))
-        self._button(panel, "BACK TO GAME" if self.current_screen in ("game", "practice_game") else "DONE",
-                     self._close_dialog).pack(fill="x")
+        scene.toggle((331, 531, 356, 556), flashes, apply_options)
+        scene.button((353, 585, 926, 641), self._close_dialog, PALETTE["cyan"])
+        self._grab_dialog()
 
     def show_help(self) -> None:
         panel = self._new_dialog("HOW TO PLAY")
@@ -1145,6 +1348,21 @@ class ClientWindow:
                 "       (one semitone off still scores 92%)\n"
                 "NPM    correct notes per minute\n"
                 "COMBO  correct notes in a row\n\n"
+                "WHITE: Z X C V B N M , . /\nBLACK: S D G H J L ;"
+            )
+            self._label(panel, lines, 11, PALETTE["text"], justify="left", anchor="w").pack(anchor="w")
+            self._button(panel, "GOT IT", self._close_dialog).pack(fill="x", pady=(16, 0))
+            return
+        if self.current_screen == "boss_game":
+            lines = (
+                "01  LISTEN\nTHE DISSONANT plays each of you your own melody.\n"
+                "Watch your notes light up and memorize them.\n\n"
+                "02  REPEAT\nThe notes hide. Play your melody back in order.\n"
+                "Correct key = 1 damage to the boss.\n"
+                "Wrong key = 1 damage to you. Unplayed notes count as wrong.\n\n"
+                "03  WIN TOGETHER\nBoss 80 HP · each player 8 HP. Melodies grow\n"
+                "from 4 to 8 notes. A player on 0 HP sits out;\n"
+                "the team loses if both are knocked out.\n\n"
                 "WHITE: Z X C V B N M , . /\nBLACK: S D G H J L ;"
             )
             self._label(panel, lines, 11, PALETTE["text"], justify="left", anchor="w").pack(anchor="w")
@@ -1180,6 +1398,7 @@ class ClientWindow:
     def _poll_events(self) -> None:
         if self._closed:
             return
+        self.music.set_muted(self.audio.muted)
         for _ in range(100):
             try:
                 self._handle_event(self.events.get_nowait())
@@ -1196,6 +1415,7 @@ class ClientWindow:
             self.root.after_cancel(self._poll_job)
         for job in self._release_jobs.values():
             self.root.after_cancel(job)
+        self.music.close()
         self.audio.close()
         self.root.destroy()
 

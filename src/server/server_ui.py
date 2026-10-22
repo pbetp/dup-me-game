@@ -178,10 +178,17 @@ class ServerWindow:
                 self.players.insert("end", row)
         state = snapshot["state"].replace("_", " ").upper()
         round_number = snapshot["round"]
-        self.match_var.set(state + (f" · ROUND {round_number} / {snapshot['total_rounds']}" if round_number else ""))
-        self.roles_var.set(f"Creator: {snapshot['creator']}    Repeater: {snapshot['repeater']}")
         remaining = snapshot["remaining"]
         self.timer_var.set(f"Time remaining: {remaining if remaining is not None else '—'}")
+        if snapshot.get("mode") == "boss":
+            self.match_var.set(state + (f" · PHRASE {round_number}" if round_number else ""))
+            hp = "    ".join(f"{name}: {value} HP" for name, value in snapshot["hp"].items())
+            self.roles_var.set(f"Boss: {snapshot['boss_hp']} / {snapshot['boss_max_hp']} HP    {hp}")
+            damage = "    ".join(f"{name}: {score}" for name, score in snapshot["scores"].items())
+            self.scores_var.set(f"Damage dealt: {damage or '—'}")
+            return
+        self.match_var.set(state + (f" · ROUND {round_number} / {snapshot['total_rounds']}" if round_number else ""))
+        self.roles_var.set(f"Creator: {snapshot['creator']}    Repeater: {snapshot['repeater']}")
         scores = "    ".join(f"{name}: {score}" for name, score in snapshot["scores"].items())
         self.scores_var.set(f"Scores: {scores or '—'}")
 

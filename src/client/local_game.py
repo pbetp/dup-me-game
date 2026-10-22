@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 from src.bot.ai_bot import AdaptiveBot
 from src.common.config import DEFAULT_ROUNDS, SERVER_PORT
+from src.server.boss_server import BossFightServer
 from src.server.server import DupMeServer
 
 
@@ -12,10 +13,12 @@ class LocalGame:
         self.bot: AdaptiveBot | None = None
         self.bot_thread: threading.Thread | None = None
 
-    def start(self, solo: bool = False, port: int = SERVER_PORT, total_rounds: int = DEFAULT_ROUNDS) -> int:
+    def start(self, solo: bool = False, port: int = SERVER_PORT, total_rounds: int = DEFAULT_ROUNDS,
+              mode: str = 'versus') -> int:
         self.close()
+        server_class = BossFightServer if mode == 'boss' else DupMeServer
         # Solo never occupies the shared LAN port or accepts remote players.
-        server = DupMeServer(host='127.0.0.1' if solo else '0.0.0.0', port=0 if solo else port, total_rounds=total_rounds)
+        server = server_class(host='127.0.0.1' if solo else '0.0.0.0', port=0 if solo else port, total_rounds=total_rounds)
         server.start()
         self.server = server
         return server.port

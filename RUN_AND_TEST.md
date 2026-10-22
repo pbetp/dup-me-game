@@ -5,7 +5,7 @@
 1. Extract `dup-me-rubric-ready.zip` into a new folder on each computer. Use the same release on both. Do not mix these files with an older copy.
 2. Use Python 3.10+ with Tkinter. Open a terminal in the extracted `dup-me-rubric` folder. On macOS, type `python3 --version`; on Windows, `py -3 --version`.
 3. Confirm Tkinter opens a small window with `python3 -m tkinter` (Windows: `py -3 -m tkinter`), then close it. Python documents this as a quick installation check. [Python Tkinter documentation](https://docs.python.org/3/library/tkinter.html)
-4. Run `python3 play.py` (Windows: `py -3 play.py`). Alternatively, open the whole folder in PyCharm/VS Code, select a local Python interpreter and run `play.py`. No pip installation is needed. Do not run from inside the ZIP.
+4. Run `python3 play.py` (Windows: `py -3 play.py`). Alternatively, open the whole folder in PyCharm/VS Code, select a local Python interpreter and run `play.py`. Before the first run, install the animated-artwork viewer with `python3 -m pip install -r requirements.txt` (Windows: `py -3 -m pip install -r requirements.txt`). Do not run from inside the ZIP.
 5. Permit incoming connections for this Python/game on the private demonstration network if the operating system asks. Hosting needs TCP 55000 and discovery needs UDP 55001. Keep firewall protection enabled; allow only the required application/ports.
 
 Python installers: [python.org downloads](https://www.python.org/downloads/). On Linux, Tk may be a separate distribution package (`python3-tk` on Debian/Ubuntu); audio also needs `aplay`. Windows and Linux execution have not been physically tested in this environment.

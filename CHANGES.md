@@ -1,3 +1,21 @@
+# Looping soundtrack update — 10 October 2026
+
+- Added the supplied Arrival at Zenith recording as an automatic, two-minute looping soundtrack.
+- Crossfaded the track's ending into its opening to soften the repeat transition.
+- Music has a separate volume slider, initially 18%; zero silences music while preserving piano notes.
+- Master mute covers both piano and music. Opening Settings preserves mute.
+- Music continues between screens and stops when the game closes; piano notes use their existing player independently.
+- Native playback on macOS/Windows; Linux streams through aplay. No new Python runtime dependencies.
+- Network rules, protocol, and existing selection highlights are preserved.
+
+# Selection visibility update — 10 October 2026
+
+- Selected AI difficulty, rounds, practice level, melody count, and instrument now have a bright cyan fill, dark text, and a checkmark.
+- Defaults are marked immediately; the selected option stays highlighted while hovering and updates when the value changes.
+- Uses the same themed controls on macOS, Windows, and Linux and retains keyboard focus feedback.
+- Verified on macOS: all 70 regression tests and the GUI smoke check passed, including selection changes and layouts at 960×700 and 1280×800.
+- Run `play.py` as before. No additional dependencies or protocol changes.
+
 # Version 4.0 — rubric implementation and demo readiness
 
 - Normal joining discovers hosts automatically through UDP; connection-file save/load provides a fallback without manual IP/port entry.

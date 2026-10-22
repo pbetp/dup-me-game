@@ -30,3 +30,17 @@ Integration/GUI tests shorten selected countdown/display delays to run quickly. 
 - A guaranteed grade, creativity score, or instructor acceptance/counting of AI and non-AI features.
 
 Run the physical checklist in `RUN_AND_TEST.md` before final submission. The local two-window test uses real sockets but is not a substitute for that demonstration.
+# Music update verification — 10 October 2026
+
+Verified on macOS with Python 3.12:
+
+- The 70 existing regression checks passed, covering game rules, real local sockets, discovery, reconnects, the AI, scoring, and piano UI logic.
+- All 10 new music checks passed: asset format/duration/join, independent music volume, master mute (including piano volume zero), single playback instance, cleanup, unavailable files/devices, Windows MCI command handling, and Linux stream rewind/volume behavior. Windows/Linux checks use controlled substitutes for the native output devices.
+- The 27 focused music and piano/UI unit checks passed after the final mute change.
+- The full GUI smoke check passed with two local clients, automatic discovery, completed matches, rematch, hosting controls, practice/setup, keyboard controls, settings, and selection highlights. No Tk callback errors occurred.
+- The real macOS audio check passed: native playback crossed the 120-second boundary and kept playing; piano notes did not interrupt the soundtrack; menu/preview changes preserved playback; Settings fit 960×700 and 1280×800; mute and independent music volume worked; closing released the sound.
+- The packaged soundtrack is 120.000 seconds, stereo 44.1 kHz 16-bit PCM, with a four-second circular crossfade. The loop boundary's largest sample step is under 0.01 full scale; peak level is below 0.981.
+
+Actual Windows/Linux audio playback and a two-physical-computer demo were not run in this macOS environment. No third-party Python packages are needed to play the updated game.
+
+Earlier release verification follows below.

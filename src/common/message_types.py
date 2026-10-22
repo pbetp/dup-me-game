@@ -19,4 +19,8 @@ PLAYER_LEFT = "player_left"
 PING = "ping"
 PONG = "pong"
 ERROR = "error"
+# Co-op boss fight
+BOSS_PHRASE = "boss_phrase"
+BOSS_FEEDBACK = "boss_feedback"
+BOSS_RESULT = "boss_result"
 

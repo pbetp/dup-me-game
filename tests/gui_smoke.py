@@ -7,6 +7,7 @@ from tkinter import ttk
 from unittest.mock import patch
 from src.common.config import COLOR_NAMES, INSTRUMENTS, PIANO_KEYS
 from src.common.discovery import save_connection_file
+from src.client.art_screen import ArtChoice, ArtScreen
 from src.client.client_ui import ClientWindow
 from src.server import server as server_module
 from src.server.server_ui import ServerWindow
@@ -29,8 +30,35 @@ def free_port():
         return sock.getsockname()[1]
 
 
+ART_SCREENS = ('solo', 'multiplayer', 'practice')
+
+
 def layout(root, app):
+    # A full update, not just idle tasks: on Windows a new page is not mapped until then.
     root.update()
+    if app.current_screen in ART_SCREENS:
+        # The whole artwork is visible and the nickname box sits inside it.
+        scene = app.container.winfo_children()[0]
+        assert isinstance(scene, ArtScreen) and scene.winfo_ismapped()
+        left, top, width, height = scene.art_box
+        assert left >= 0 and top >= 0, scene.art_box
+        assert left + width <= scene.winfo_width() + 1 and top + height <= scene.winfo_height() + 1
+        if app.nickname_entry is not None:
+            entry = app.nickname_entry
+            assert left <= entry.winfo_x() and entry.winfo_x() + entry.winfo_width() <= left + width + 1
+            assert top <= entry.winfo_y() and entry.winfo_y() + entry.winfo_height() <= top + height + 1
+        return
+    if app.current_screen == 'menu':
+        scene = app.opening_scene
+        assert scene and scene.winfo_ismapped()
+        left, top, width, height = scene.art_box
+        assert left >= 0 and top >= 0
+        assert left + width <= scene.winfo_width()
+        assert top + height <= scene.winfo_height()
+        for index in range(5):
+            x0, y0, x1, y1 = scene.button_bounds(index)
+            assert scene.button_at((x0 + x1) / 2, (y0 + y1) / 2) == index
+        return
     scene, panel = app.container.winfo_children()
     assert panel.winfo_y() > scene.oy + 166 * scene.scale, ('header overlap', panel.winfo_y())
     assert panel.winfo_y() + panel.winfo_height() < root.winfo_height(), ('panel clipped', panel.winfo_height())
@@ -42,6 +70,47 @@ def layout(root, app):
                 assert child.winfo_y() + child.winfo_height() <= widget.winfo_height(), ('height', str(child))
                 inside(child)
     inside(panel)
+
+
+def check_choices(root, parent):
+    """Each group shows exactly one choice, including before and after a click."""
+    groups = {}
+
+    def collect(widget):
+        if isinstance(widget, ArtScreen):
+            for control in widget.controls:
+                if isinstance(control, ArtChoice):
+                    groups.setdefault(str(control.variable), []).append(control)
+        for child in widget.winfo_children():
+            if isinstance(child, ttk.Radiobutton):
+                groups.setdefault(str(child.cget('variable')), []).append(child)
+            collect(child)
+
+    collect(parent)
+    style = ttk.Style(root)
+    for variable, buttons in groups.items():
+        original = root.getvar(variable)
+
+        def selected():
+            active = [button for button in buttons if button.instate(['selected'])]
+            marked = [button for button in buttons if button.cget('text').startswith('\u2713 ')]
+            assert len(active) == 1 and active == marked
+            if isinstance(active[0], ArtChoice):
+                return active[0]
+            button_style = active[0].cget('style')
+            fill = style.lookup(button_style, 'background', ('selected',))
+            assert fill != style.lookup(button_style, 'background', ())
+            assert fill == style.lookup(button_style, 'background', ('selected', 'active'))
+            return active[0]
+
+        selected()
+        for button in buttons:
+            button.invoke()
+            root.update()
+            assert selected() is button
+        root.setvar(variable, original)
+        root.update()
+        selected()
 
 
 def run():
@@ -60,7 +129,9 @@ def run():
             for show in screens:
                 show()
                 layout(root, app)
+                check_choices(root, app.container)
         # Step-by-step navigation: BACK returns to the previous menu.
+        app.show_setup('host')
         app._go_back()
         assert app.current_screen == 'multiplayer'
         app.nickname_entry.delete(0, 'end')
@@ -224,9 +295,11 @@ def run():
         # Settings opens inside the game window, not as a separate window.
         assert not any(isinstance(w, tk.Toplevel) for w in root.winfo_children())
         assert app.dialog.winfo_ismapped()
-        panel = app.dialog.winfo_children()[0]
-        buttons = [w for frame in panel.winfo_children() for w in frame.winfo_children()
-                   if isinstance(w, tk.Radiobutton)]
+        # Settings is the full-window Orbital Mixer artwork with live controls.
+        panel = app.dialog
+        buttons = app.instrument_buttons
+        assert isinstance(panel, ArtScreen) and len(buttons) == len(INSTRUMENTS)
+        check_choices(root, panel)
         before = list(app.state.pattern)
         app.press_color('c4')  # the board behind an open panel ignores notes
         assert app.state.pattern == before
@@ -240,9 +313,10 @@ def run():
             button.invoke()
             root.update()
             assert app.audio.instrument == instrument and app.board.instrument == instrument
+            assert button.instate(['selected']) and button.cget('text').startswith('\u2713 ')
             assert app.state.pattern == before
-        for widget in panel.winfo_children():
-            assert widget.winfo_y() + widget.winfo_height() <= panel.winfo_height()
+        left, top, width, height = panel.art_box
+        assert left >= 0 and top >= 0 and left + width <= panel.winfo_width() + 1
         app._close_dialog()
         app.show_help()
         root.update()
@@ -251,6 +325,7 @@ def run():
         assert app.current_screen == 'menu' and not app.preview_mode
         app.show_settings()
         root.update()
+        check_choices(root, app.dialog)
         # Menu buttons behind the open panel are blocked until it closes.
         assert app.root.grab_current() is app.dialog
         app._close_dialog()

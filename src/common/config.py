@@ -7,7 +7,7 @@ SERVER_HOST = "127.0.0.1"
 SERVER_PORT = 55000
 
 DISCOVERY_PORT = 55001
-APP_VERSION = "4.1"
+APP_VERSION = "4.2"
 HEARTBEAT_INTERVAL = 3.0
 HEARTBEAT_TIMEOUT = 15.0
 MAX_MESSAGE_BYTES = 64 * 1024
@@ -19,6 +19,17 @@ PHASE_RESULT_SECONDS = 2.0
 
 DEFAULT_ROUNDS = 2
 ROUND_OPTIONS = (2, 4, 6, 8, 10, 12)
+
+# Multiplayer modes: "versus" is the classic 1v1 match, "boss" the two-player co-op boss fight.
+GAME_MODES = ("versus", "boss")
+BOSS_NAME = "THE DISSONANT"
+BOSS_MAX_HP = 80
+PLAYER_MAX_HP = 8
+# Each phrase is one note longer than the last, from 4 notes up to 8.
+BOSS_PHRASE_START = 4
+BOSS_PHRASE_MAX = 8
+BOSS_NOTE_GAP = 0.6
+BOSS_RESULT_SECONDS = 3.0
 
 # Chromatic C4–E5. Black keys sit after the given white-key index.
 # (note ID, computer key, MIDI pitch, display color, white-key index, black)

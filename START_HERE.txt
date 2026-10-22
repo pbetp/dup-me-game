@@ -1,10 +1,24 @@
-DUP ME 4.1 — USE THIS SAME RELEASE ON BOTH COMPUTERS
+DUP ME 4.2 — USE THIS SAME RELEASE ON BOTH COMPUTERS
 
 1. Extract the ZIP into a new folder.
-2. Use Python 3.10+ with Tkinter. No pip packages are needed.
+2. Use Python 3.10+ with Tkinter. Install the artwork viewer once:
+   macOS/Linux: python3 -m pip install -r requirements.txt
+   Windows:     py -3 -m pip install -r requirements.txt
 3. Run play.py in your IDE, or open a terminal in this folder:
    macOS/Linux: python3 play.py
    Windows:     py -3 play.py
+
+ANIMATED DISCO OPENING
+The opening screen uses the exact approved animated artwork.
+Click its five pictured buttons, or use Up/Down/Tab and Enter.
+Keep assets/ui/disco-opening.gif with the game.
+The game engine, game board, networking and music are unchanged.
+
+BACKGROUND MUSIC
+Arrival at Zenith starts automatically and loops every two minutes.
+SETTINGS -> MUSIC controls its volume; 0 turns only the music off.
+PIANO VOLUME controls the notes separately. Ctrl+M mutes all audio.
+Keep the assets folder with the extracted game. Closing the game stops music.
 
 ONE COMPUTER + AI
 SINGLE PLAYER -> nickname -> AI level -> 2 STD rounds -> START.
@@ -16,6 +30,11 @@ A: MULTIPLAYER -> nickname -> HOST A GAME -> 2 STD rounds -> START HOSTING.
 B: MULTIPLAYER -> different nickname -> JOIN A GAME -> JOIN.
 B finds the host without typing an IP or port.
 Do not also start server.py when using HOST A GAME.
+
+BOSS CO-OP (TWO COMPUTERS)
+Both: MULTIPLAYER -> GAME MODE: BOSS CO-OP. A: HOST A GAME. B: JOIN A GAME.
+Team up vs THE DISSONANT (80 HP, 8 HP each). Correct key = 1 boss damage,
+wrong or missed key = 1 self damage.
 
 FALLBACK
 A: server dashboard -> Save Connection File.

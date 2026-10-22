@@ -39,6 +39,8 @@ from .player_manager import public_player, registered_players
 
 
 class DupMeServer:
+    mode = "versus"
+
     def __init__(
         self,
         event_queue: queue.Queue[dict[str, Any]] | None = None,
@@ -239,6 +241,7 @@ class DupMeServer:
                 "nickname": nickname,
                 "version": APP_VERSION,
                 "total_rounds": self.game.total_rounds,
+                "mode": self.mode,
             }
         )
         self._log(f"{nickname} joined from {session.address[0]}")
@@ -581,7 +584,7 @@ class DupMeServer:
         with self.lock:
             return {"server_id": self.server_id, "name": self.name, "port": self.port,
                     "players": len(registered_players(self.sessions.values())),
-                    "total_rounds": self.game.total_rounds}
+                    "total_rounds": self.game.total_rounds, "mode": self.mode}
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -601,6 +604,7 @@ class DupMeServer:
                 remaining = max(0, math.ceil(self.deadline - time.monotonic()))
             return {
                 "type": "snapshot",
+                "mode": self.mode,
                 "running": self.running.is_set(),
                 "online_count": len(players),
                 "connection_count": len(self.sessions),
