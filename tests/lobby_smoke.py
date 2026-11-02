@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from PIL import ImageGrab
+from PIL import ImageGrab, ImageTk
 
 from src.client.client_ui import ClientWindow
 from src.client.lobby_screen import LobbyScreen
@@ -32,18 +32,11 @@ def click(scene, box):
     scene.event_generate('<ButtonRelease-1>', x=x, y=y)
 
 
-def rendered_region(scene, y_min, y_max):
-    """Compare actual animated artwork, rather than only a frame counter."""
-    result = []
-    for item in scene.find_withtag('animation'):
-        coords = scene.coords(item)
-        if len(coords) < 2:
-            continue
-        logical_y = (coords[1] - scene.oy) / scene.scale
-        if y_min <= logical_y <= y_max:
-            result.append((scene.type(item), tuple(round(value, 2) for value in coords),
-                           scene.itemcget(item, 'fill')))
-    return tuple(result)
+def rendered_region(scene, x0, y0, x1, y1):
+    """Read the actual Tk image shown behind the controls."""
+    image = ImageTk.getimage(scene._photo).convert("RGB")
+    box = tuple(round(value * scene.scale) for value in (x0, y0, x1, y1))
+    return image.crop(box).tobytes()
 
 
 def screenshot(root, folder, name):
@@ -91,19 +84,27 @@ def run(screenshots=None):
                 if not hasattr(control, 'box'):
                     continue
                 x0, y0, x1, y1 = control.box
-                assert 0 <= x0 < x1 <= 1280 and 0 <= y0 < y1 <= 720
+                assert 850 <= x0 < x1 <= 1232 and 210 <= y0 < y1 <= 655
 
         root.geometry('1280x800+10+30')
         app.show_setup('host')
         settle(root)
         scene = app.lobby_scene
         first = scene.frame_index
-        ball = rendered_region(scene, 200, 460)
-        keyboard = rendered_region(scene, 490, 720)
+        ball = rendered_region(scene, 200, 10, 530, 300)
+        keyboard = rendered_region(scene, 70, 390, 630, 690)
         settle(root, .5)
         assert scene.frame_index != first
-        assert ball != rendered_region(scene, 200, 460), 'Disco tiles did not rotate'
-        assert keyboard != rendered_region(scene, 490, 720), 'Keyboard keys did not animate'
+        assert ball != rendered_region(scene, 200, 10, 530, 300), 'Disco tiles did not rotate'
+        assert keyboard != rendered_region(scene, 70, 390, 630, 690), 'Keyboard keys did not animate'
+        # Every decoded background pixel is the original asset, including musicians.
+        assert ImageTk.getimage(scene._photo).convert('RGB').tobytes() == scene._frame.tobytes()
+        # A whole loop must wrap without replacing interface controls.
+        scene._stop()
+        scene.frame_index = scene.frame_count - 1
+        scene._source.seek(scene.frame_index)
+        scene._advance()
+        assert scene.frame_index == 0
         screenshot(root, screenshots, 'host-setup-1280')
 
         # Empty rows are not joinable, and ending a busy state must not enable Join.
@@ -129,14 +130,14 @@ def run(screenshots=None):
         assert app.connect_button.instate(['!disabled'])
         # The blank area below the visible room must not select/join an offscreen row.
         browser = app.server_list
-        browser.press(540, 415)
+        browser.press(browser.box[0] + 20, browser.box[1] + 70)
         assert browser.curselection() == (0,)
         joined = []
         original_join = browser.on_join
         browser.on_join = lambda: joined.append(True)
         left, top, width, height = app.lobby_scene.art_box
-        app.lobby_scene._double(SimpleNamespace(x=left + 540 * width / 1280,
-                                               y=top + 415 * height / 720))
+        app.lobby_scene._double(SimpleNamespace(x=left + (browser.box[0] + 20) * width / 1280,
+                                               y=top + (browser.box[1] + 70) * height / 720))
         assert not joined
         browser.on_join = original_join
         app.server_list.selection_clear()

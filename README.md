@@ -1,4 +1,4 @@
-# Dup Me 4.3 — Neon multiplayer lounge
+# Dup Me 4.3 — Animated rooftop multiplayer lounge
 
 A two-player piano memory game built with Python sockets and Tkinter. This release adds matching animated host, join, and waiting-room screens while preserving the original opening GIF, 17-key piano, four instruments, adaptive opponent, and extended matches. **Use version 4.3 on both computers.** See [UI_UPDATE.md](UI_UPDATE.md) for the updated flow and checks.
 
@@ -40,7 +40,7 @@ The menu pages use the approved disco-space artwork in `assets/ui`, played and f
 | Settings | `settings-orbital-mixer.gif` (T1 · Orbital Mixer) |
 | Boss co-op fight | `boss-concert-party.png` (Concert Party) |
 
-The painted buttons are the real buttons. Controls whose state changes (nickname box, choice buttons, sliders, checkbox, status text) are drawn live exactly over the painted ones; on Multiplayer the 1V1 / BOSS CO-OP switch sits where the Wi-Fi hint was painted. In the boss fight, the painted piano is the playable keyboard, and the phrase, HP, P1/P2 tags, banner and note ribbons are drawn live over the artwork. Host, Join, and both waiting-room views now share a simpler neon lounge in `src/client/lobby_screen.py`: a rotating disco ball, animated keyboard, city skyline, two player cards, and live controls. Results and Help keep the original pixel-room pages.
+The painted buttons are the real buttons. Controls whose state changes (nickname box, choice buttons, sliders, checkbox, status text) are drawn live exactly over the painted ones; on Multiplayer the 1V1 / BOSS CO-OP switch sits where the Wi-Fi hint was painted. In the boss fight, the painted piano is the playable keyboard, and the phrase, HP, P1/P2 tags, banner and note ribbons are drawn live over the artwork. Host, Join, and both waiting-room views reuse the exact original `multiplayer-rooftop-jam.gif`: both musicians, the rotating disco ball, playing keyboards, skyline, logo, and detailed neon panel frame. Live controls sit inside the right-hand frame, with stacked player cards and two rows of round choices. Approved design references are included in `docs/design-reference/`. Results and Help keep the original pixel-room pages.
 
 ## Game rules
 

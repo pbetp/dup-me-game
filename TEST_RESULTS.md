@@ -1,3 +1,18 @@
+# Rooftop artwork update — 2 November 2026 (v4.3)
+
+- Full unit/network suite: **105 tests passed** in 31.8 seconds.
+- Updated lobby check: passed three window sizes, round controls, room selection/loading/full states, ready/cancel/disconnect, keyboard navigation, modal pause/resume, minimize/restore and timer cleanup.
+- Verified the actual Tk background image matches the original decoded GIF pixels, the disco and keyboard regions both change, and the 192-frame loop wraps correctly.
+- Full GUI gameplay check: two actual clients completed discovery, readiness/start, match, rematch, room reset, forfeit, file fallback, solo startup, keyboard/instruments and settings/help with no Tk callback errors.
+- All eight original artwork/audio assets match the supplied ZIP byte-for-byte. No generated still image replaces the animation.
+- Native macOS host screen visually checked for artwork fidelity, readable controls and spacing.
+- Co-op gameplay and boss piano artwork checks passed: readiness/start, visible keys during listening, disabled input outside play, and all 17 playable notes.
+- Source and tests compile cleanly.
+
+The earlier verification record below is retained for the previous lounge implementation.
+
+---
+
 # Update verification — 2 November 2026 (v4.3)
 
 - Full unit/network suite: **105 tests passed** using Python 3.12. Local networking was enabled for the socket tests.

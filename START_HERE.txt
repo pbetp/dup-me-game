@@ -1,3 +1,6 @@
+ROOFTOP ARTWORK UPDATE
+All four multiplayer setup/waiting screens now use the original detailed animated rooftop scene.
+
 DUP ME 4.3 — USE THIS SAME RELEASE ON BOTH COMPUTERS
 
 1. Extract the ZIP into a new folder.

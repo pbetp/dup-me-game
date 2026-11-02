@@ -418,40 +418,39 @@ class ClientWindow:
         if mode == "host":
             self.rounds_var = tk.IntVar(value=self.total_rounds)
             if self.play_mode == "versus":
-                boxes = ((520, 380, 634, 424), (644, 380, 743, 424),
-                         (753, 380, 852, 424), (862, 380, 961, 424),
-                         (971, 380, 1070, 424), (1080, 380, 1180, 424))
+                boxes = tuple((870 + (i % 3) * 120, 414 + (i // 3) * 43,
+                               980 + (i % 3) * 120, 448 + (i // 3) * 43) for i in range(6))
                 self._busy_widgets += scene.choices(self.rounds_var, [
                     (rounds, f"{rounds} STD" if rounds == DEFAULT_ROUNDS else str(rounds), box)
                     for rounds, box in zip(ROUND_OPTIONS, boxes)],
                     dict(SINGLE_CHOICE, back="#06132b", unit=1.6))
-                scene.status(520, 1180, 442, "Standard: 2 rounds. Extended: 4–12 rounds.",
-                             size=13, color=PALETTE["muted"])
+                scene.status(870, 1220, 505, "Standard: 2 rounds. Extended: 4–12.",
+                             size=11, color=PALETTE["muted"])
             else:
-                scene.status(520, 1180, 380, "THE DISSONANT · 80 HP", size=17, color=PALETTE["yellow"])
-                scene.status(520, 1180, 416, "Repeat your melody together. Each player has 8 HP.",
-                             size=14, color=PALETTE["muted"])
-            scene.status(520, 1180, 474, "Your friend can find your room on the same Wi-Fi.",
-                         size=14, color=PALETTE["muted"])
-            self.join_status = scene.status(520, 1180, 521, message, size=13)
-            scene.button((520, 565, 770, 615), "< BACK", self._go_back)
-            self.connect_button = scene.button((820, 565, 1180, 615), "START HOSTING >",
+                scene.status(870, 1220, 430, "THE DISSONANT · 80 HP", size=16, color=PALETTE["yellow"])
+                scene.status(870, 1220, 472, "Repeat your melodies together. Each player has 8 HP.",
+                             size=12, color=PALETTE["muted"])
+            scene.status(870, 1220, 534, "Your friend can join on the same Wi-Fi.",
+                         size=11, color=PALETTE["muted"])
+            self.join_status = scene.status(870, 1220, 563, message, size=11)
+            scene.button((870, 593, 995, 629), "< BACK", self._go_back)
+            self.connect_button = scene.button((1010, 593, 1220, 629), "START HOSTING >",
                                                 self.connect, primary=True)
-            scene.status(820, 1180, 632, "Keep this window open while hosting.",
-                         size=12, color=PALETTE["muted"])
+            scene.status(870, 1220, 642, "Keep this window open while hosting.",
+                         size=10, color=PALETTE["muted"])
         else:
-            self.server_list = scene.server_list((520, 345, 1180, 425),
+            self.server_list = scene.server_list((870, 387, 1220, 467),
                                                  on_select=self._server_selected, on_join=self.connect)
-            self.check_button = scene.button((520, 445, 842, 490), "FIND GAMES", self.find_games)
-            self.profile_button = scene.button((858, 445, 1180, 490), "LOAD FILE", self.load_connection)
+            self.check_button = scene.button((870, 489, 1038, 525), "FIND GAMES", self.find_games)
+            self.profile_button = scene.button((1052, 489, 1220, 525), "LOAD FILE", self.load_connection)
             self._busy_widgets += [self.check_button, self.profile_button]
             self.join_status = scene.status(
-                520, 1180, 521, message or "Use the same Wi-Fi, or load a connection file.",
-                size=13, color=PALETTE["danger"] if message else PALETTE["muted"])
-            scene.button((520, 565, 770, 615), "< BACK", self._go_back)
-            self.connect_button = scene.button((820, 565, 1180, 615), "JOIN GAME >",
+                870, 1220, 558, message or "Use the same Wi-Fi, or load a connection file.",
+                size=11, color=PALETTE["danger"] if message else PALETTE["muted"])
+            scene.button((870, 593, 995, 629), "< BACK", self._go_back)
+            self.connect_button = scene.button((1010, 593, 1220, 629), "JOIN GAME >",
                                                 self.connect, color=PALETTE["pink"], primary=True)
-            scene.status(820, 1180, 632, "Join the selected room", size=12, color=PALETTE["muted"])
+            scene.status(870, 1220, 642, "Join the selected room", size=10, color=PALETTE["muted"])
             self._display_servers()
             if not self.servers and not message:
                 self.find_games()
@@ -587,26 +586,23 @@ class ClientWindow:
     def show_lobby(self, message: str = "") -> None:
         scene = self._lobby_menu("lobby")
         is_host = self.mode == "host" and self.local_game.server is not None
-        scene.drawers.append(lambda screen: screen.frame((520, 440, 1180, 500), "#174170", 1))
+        scene.drawers.append(lambda screen: screen.frame((870, 492, 1220, 550), "#174170", 1))
         if is_host:
-            scene.status(535, 950, 454, "INVITE YOUR FRIEND", size=15, color=PALETTE["cyan"])
-            scene.status(535, 950, 480, "Use the same Wi-Fi or a connection file.",
-                         size=12, color=PALETTE["muted"])
-            scene.button((970, 455, 1165, 489), "SAVE CONNECTION FILE", self.save_lobby_connection)
-            # Keep the existing dashboard accessible without making it the main lobby action.
-            scene.button((1065, 215, 1180, 240), "DASHBOARD", self.show_server_dashboard)
+            scene.status(875, 1220, 504, "INVITE YOUR FRIEND · Same Wi-Fi or file", size=11, color=PALETTE["cyan"])
+            scene.button((878, 520, 1097, 543), "SAVE CONNECTION FILE", self.save_lobby_connection)
+            scene.button((1107, 520, 1212, 543), "DASHBOARD", self.show_server_dashboard)
         else:
-            self.lobby_info = scene.status(535, 1165, 469, "", size=14, color=PALETTE["muted"])
-        self.lobby_status = scene.status(520, 1180, 534, message, size=14, color=PALETTE["yellow"])
-        scene.button((520, 565, 770, 615), "< CLOSE ROOM" if is_host else "< LEAVE ROOM",
+            self.lobby_info = scene.status(880, 1210, 522, "", size=12, color=PALETTE["muted"])
+        self.lobby_status = scene.status(870, 1220, 573, message, size=11, color=PALETTE["yellow"])
+        scene.button((870, 603, 1035, 633), "< CLOSE ROOM" if is_host else "< LEAVE ROOM",
                      self.return_to_join)
-        self.lobby_hint = scene.status(805, 1180, 632, "", size=12, color=PALETTE["muted"])
+        self.lobby_hint = scene.status(870, 1220, 646, "", size=10, color=PALETTE["muted"])
         if is_host:
-            self.start_lobby_button = scene.button((820, 565, 1180, 615), "START GAME >",
+            self.start_lobby_button = scene.button((1050, 603, 1220, 633), "START GAME >",
                                                     self.start_lobby_match, primary=True)
             scene.default_action = self.start_lobby_match
         else:
-            self.ready_button = scene.button((820, 565, 1180, 615), "I'M READY",
+            self.ready_button = scene.button((1050, 603, 1220, 633), "I'M READY",
                                               self.toggle_lobby_ready, color=PALETTE["pink"], primary=True)
             scene.default_action = self.toggle_lobby_ready
         self._refresh_player_list()

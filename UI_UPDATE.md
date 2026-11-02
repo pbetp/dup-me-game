@@ -1,4 +1,4 @@
-# DUP ME 4.3 — animated multiplayer lounge
+# DUP ME 4.3 — animated rooftop multiplayer lounge
 
 This update implements the approved Host a Game, Join a Game, host waiting-room, and client waiting-room layouts.
 
@@ -38,9 +38,9 @@ The host can open Dashboard from the waiting room. Reset Room clears scores, ret
 
 The home, single-player, multiplayer-menu, practice, settings and boss artwork assets are preserved. In particular, the original opening GIF and its playback code retain the spinning disco ball, moving piano keys, flashing pads and stars.
 
-The new lounge uses the approved arrangement: logo and disco ball on the left, keyboard below, and one large dark neon panel on the right. Its disco tiles rotate continuously and keyboard/pad lights play in sequence. The controls, room list, round choices, player names and ready states are live. Host actions are cyan; client actions are pink; waiting messages are gold.
+The revised lounge uses the exact original `multiplayer-rooftop-jam.gif` at its original 192-frame timing, including both musicians, the disco ball, piano keys, neon trails, skyline and DUP ME logo. The detailed painted neon border stays intact; only the panel interior is replaced with live controls. All four pages share this same animated asset. Round choices use two rows and player cards stack vertically so neither musician is covered. The four approved mockups are included in `docs/design-reference/`. The controls, room list, round choices, player names and ready states are live. Host actions are cyan; client actions are pink; waiting messages are gold.
 
-Every new page fits the window with the same 16:9 proportions. It pauses background motion while hidden or behind its modal controls, resumes when visible, and stops timers when the page closes. Tab and Shift-Tab move focus; Enter or Space activates the focused control. Arrow keys and scrolling navigate discovered rooms.
+Only the current decoded animation frame is retained, avoiding a large frame cache. Every new page fits the window with the same 16:9 proportions. It pauses background motion while hidden or behind its modal controls, resumes when visible, and stops timers when the page closes. Tab and Shift-Tab move focus; Enter or Space activates the focused control. Arrow keys and scrolling navigate discovered rooms.
 
 ## Boss piano visibility fix
 
