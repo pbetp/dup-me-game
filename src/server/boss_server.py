@@ -40,11 +40,14 @@ class BossFightServer(DupMeServer):
 
     # ---- match flow ----
 
-    def _start_match_if_possible_locked(self, preferred_creator: str | None = None) -> bool:
+    def _start_match_if_possible_locked(self, preferred_creator: str | None = None,
+                                      requested_by: str | None = None) -> bool:
         if self.game.state != WAITING_FOR_PLAYERS:
             return False
         available = registered_players(self.sessions.values())
         if len(available) < 2:
+            return False
+        if not self._lobby_start_allowed_locked(requested_by):
             return False
         player_ids = [session.player_id for session in available[:2]]
         self.game.begin_match(player_ids)

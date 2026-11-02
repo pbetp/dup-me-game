@@ -3,6 +3,8 @@
 JOIN = "join"
 WELCOME = "welcome"
 PLAYER_LIST = "player_list"
+LOBBY_READY = "lobby_ready"
+LOBBY_START = "lobby_start"
 MATCH_START = "match_start"
 ROUND_START = "round_start"
 PATTERN_STEP = "pattern_step"

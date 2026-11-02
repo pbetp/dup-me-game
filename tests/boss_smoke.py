@@ -2,7 +2,7 @@
 import tkinter as tk
 
 from src.client.client_ui import ClientWindow
-from tests.gui_smoke import check_choices, free_port, layout, pump
+from tests.gui_smoke import check_choices, drain, free_port, layout, pump
 
 root = tk.Tk()
 errors = []
@@ -14,11 +14,11 @@ app.audio.muted = True
 for geometry in ("960x700", "1280x800"):
     root.geometry(geometry)
     app.show_multiplayer()
-    root.update()
+    drain(root)
     layout(root, app)
     check_choices(root, app.container)
 app.play_mode_var.set("boss")
-root.update()
+drain(root)
 app._multiplayer_next("host")
 assert app.current_screen == "host" and app.play_mode == "boss"
 layout(root, app)
@@ -34,6 +34,12 @@ friend.play_mode_var.set("boss")
 friend._multiplayer_next("join")
 pump(root, lambda: friend.servers and not friend.connect_button.instate(["disabled"]))
 friend.connect()
+pump(root, lambda: app.current_screen == friend.current_screen == "lobby"
+     and len(app.players) == len(friend.players) == 2)
+assert app.start_lobby_button.instate(["disabled"])
+friend.toggle_lobby_ready()
+pump(root, lambda: app.start_lobby_button.instate(["!disabled"]))
+app.start_lobby_match()
 pump(root, lambda: app.current_screen == friend.current_screen == "boss_game")
 assert friend.play_mode == "boss"
 

@@ -1,3 +1,17 @@
+# Update verification — 2 November 2026 (v4.3)
+
+- Full unit/network suite: **105 tests passed** using Python 3.12. Local networking was enabled for the socket tests.
+- Original opening smoke: passed exact rendered artwork pixels, all 192 animation frames, wraparound, three window sizes, menu routes, keyboard activation, modal pause/resume, and timer cleanup.
+- New lobby smoke: passed host/join layouts at 960×700, 1280×800 and 1600×900, actual disco tile/keyboard color changes, round choices, empty/full/selected/loading room states, keyboard controls, hidden-room hit testing, ready/cancel/disconnect, and animation lifecycle.
+- Full GUI gameplay smoke: passed two real clients, discovery, manual ready/start, match/scoring/role swap, rematch, reset-room flow, host dashboard, forfeit, solo bot, connection-file fallback, keys/instruments/settings/help, and responsive solo animation.
+- Boss gameplay smoke: passed co-op readiness/start, listening/repetition, HP and team damage, victory, rematch and forfeit.
+- New boss-art smoke: passed checks for visible white keys and no obscuring disabled-state rectangle, live hit areas, input gating and note flashes across listening/play/results at three sizes.
+- Source assets and the original opening playback code were compared byte-for-byte with the supplied archive and preserved.
+
+The original records below describe the earlier release. The new launcher multiplayer flow requires guest readiness and host Start Game. Reset Room returns launcher players to that waiting room.
+
+---
+
 # Verification — Dup Me 4.0
 
 Date: 8 October 2026. Environment: local macOS, Python 3.12, Tk 8.6. Socket/display permissions were enabled for the tests. Source: this `dup-me-rubric` release.

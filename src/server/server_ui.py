@@ -137,7 +137,8 @@ class ServerWindow:
         controls.pack(fill="x", pady=(14, 0))
         ttk.Button(controls, text="SAVE CONNECTION FILE", style="Dash.TButton",
                    command=self.save_connection).pack(side="left")
-        self.reset_button = ttk.Button(controls, text="RESTART MATCH", style="Dash.TButton",
+        self.reset_button = ttk.Button(controls, text="RESET ROOM" if self.server.manual_lobby else "RESTART MATCH",
+                                       style="Dash.TButton",
                                        command=self.restart_match)
         self.reset_button.pack(side="right")
         self.end_button = ttk.Button(controls, text="END MATCH", style="Danger.Dash.TButton",
@@ -211,7 +212,8 @@ class ServerWindow:
             self.notice.configure(text="No match is running.", fg=PALETTE["yellow"])
 
     def restart_match(self) -> None:
-        self.server.reset_game("The host restarted the match.")
+        self.server.reset_game("The host reset the room." if self.server.manual_lobby
+                               else "The host restarted the match.")
         self._after_host_action()
 
     def _after_host_action(self) -> None:

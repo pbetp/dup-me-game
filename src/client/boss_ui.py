@@ -364,10 +364,13 @@ class BossBoard(GameBoard):
         return KEY_LEFT + index * KEY_W, KEY_TOP, KEY_W, 176
 
     def _keyboard(self) -> None:
-        """The painted piano is the real one: its keys are the click areas."""
+        """Keep the painted piano visible; gate input with its click regions.
+
+        The listen phase must still show the keys so forced note flashes have
+        a visible keyboard beneath them. A full-piano black stipple overlay is
+        not portable: macOS Tk can paint it as an opaque black rectangle.
+        """
         s, p = self.state, PALETTE
-        if not s.enabled:
-            self.rect(KEY_LEFT - 2, KEY_TOP - 2, KEY_W * 10 + 4, 180, "#000000", stipple="gray50")
         # White keys first; black key areas win overlapping clicks.
         for keys in (WHITE_KEYS, BLACK_KEYS):
             for color, _key, _midi, _accent, index, black in keys:

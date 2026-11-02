@@ -1,4 +1,4 @@
-DUP ME 4.2 — USE THIS SAME RELEASE ON BOTH COMPUTERS
+DUP ME 4.3 — USE THIS SAME RELEASE ON BOTH COMPUTERS
 
 1. Extract the ZIP into a new folder.
 2. Use Python 3.10+ with Tkinter. Install the artwork viewer once:
@@ -12,7 +12,7 @@ ANIMATED DISCO OPENING
 The opening screen uses the exact approved animated artwork.
 Click its five pictured buttons, or use Up/Down/Tab and Enter.
 Keep assets/ui/disco-opening.gif with the game.
-The game engine, game board, networking and music are unchanged.
+The game board and music are preserved. Host, Join and Waiting Room now use a matching animated neon lounge.
 
 BACKGROUND MUSIC
 Arrival at Zenith starts automatically and loops every two minutes.
@@ -29,6 +29,8 @@ Connect both to the same Wi-Fi or phone hotspot.
 A: MULTIPLAYER -> nickname -> HOST A GAME -> 2 STD rounds -> START HOSTING.
 B: MULTIPLAYER -> different nickname -> JOIN A GAME -> JOIN.
 B finds the host without typing an IP or port.
+In the waiting room: B presses I'M READY, then A presses START GAME.
+B can click READY again to cancel readiness before the host starts.
 Do not also start server.py when using HOST A GAME.
 
 BOSS CO-OP (TWO COMPUTERS)
@@ -37,15 +39,16 @@ Team up vs THE DISSONANT (80 HP, 8 HP each). Correct key = 1 boss damage,
 wrong or missed key = 1 self damage.
 
 FALLBACK
-A: server dashboard -> Save Connection File.
+A: waiting room -> SAVE CONNECTION FILE (also available in the dashboard).
 Transfer the JSON file to B.
 B: MULTIPLAYER -> JOIN A GAME -> LOAD FILE -> select file -> JOIN.
 Both machines must still be on a network that permits local TCP traffic.
 
 SERVER
-When hosting, open SERVER DASHBOARD in the lobby (or SERV in the game).
+When hosting, open DASHBOARD in the lobby (or SERV in the game).
 It appears inside the game window and shows online count and list.
-RESTART MATCH clears scores and restarts round 1 at once.
+RESET ROOM clears scores and returns players to the waiting room.
+B marks ready again, then A starts. Standalone server.py retains RESTART MATCH.
 END MATCH ends the match now; the winner is decided by current scores.
 EXIT on the game board: the player who exits always LOSES.
 Close dashboard = hide it. SERV on the game board reopens it.

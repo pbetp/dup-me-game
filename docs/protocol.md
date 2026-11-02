@@ -1,4 +1,4 @@
-# Protocol — Dup Me 4.0
+# Protocol — Dup Me 4.3
 
 ## TCP framing
 
@@ -6,9 +6,11 @@ Each message is a four-byte unsigned network-order (big-endian) payload length f
 
 | Type | Direction | Purpose |
 |---|---|---|
-| `join` | Client → server | Register nickname and version `4.0` |
+| `join` | Client → server | Register nickname and version `4.3` |
 | `welcome` | Server → client | Confirm ID, nickname, version, total rounds |
-| `player_list` | Server → clients | Registered users and match membership |
+| `player_list` | Server → clients | Registered users, match membership, readiness and host ID |
+| `lobby_ready` | Client → server | Guest sets boolean ready state in a manual waiting room |
+| `lobby_start` | Host → server | Start a manual room only after both players are ready |
 | `match_start` | Server → active players | Players/scores, first creator and total rounds |
 | `round_start` | Server → active players | Phase, roles, duration, fresh turn ID, count, scores |
 | `pattern_step` | Creator → server | Note ID and turn ID |
@@ -36,10 +38,14 @@ The legacy `color` field holds one of these note IDs:
 
 All moves require the current `turn_id`; missing/stale IDs are rejected. Server also checks role, phase, note validity, count and deadline. The client cannot set its score. Joining clients cannot override the host's `total_rounds`. Instrument choice is a local listening preference; audio bytes are never sent.
 
-A diagnostic ping gets `pong` with `app: "Dup Me"` and `version: "4.0"` without becoming a registered player. Live clients ping every 3 seconds; approximately 15 seconds without traffic times out the connection. Unregistered sockets expire after 10 seconds. Outgoing queues are bounded (client 128, server session 256); a stalled peer is closed rather than blocking the controller.
+A diagnostic ping gets `pong` with `app: "Dup Me"` and `version: "4.3"` without becoming a registered player. Live clients ping every 3 seconds; approximately 15 seconds without traffic times out the connection. Unregistered sockets expire after 10 seconds. Outgoing queues are bounded (client 128, server session 256); a stalled peer is closed rather than blocking the controller.
 
 ## UDP discovery
 
 LAN hosts listen on UDP 55001. Clients send a small JSON `dupme_discover` request with a random 32-character nonce to broadcast and loopback addresses, retrying during a roughly 1.5-second search. A `dupme_server` reply echoes the nonce and includes app, version, server ID, name, TCP port, registered-player count and round count. The client takes the IP from the reply's source, deduplicates by server ID, and prefers a LAN reply over loopback.
 
 Discovery does not register a player or carry gameplay. It is a convenience on a trusted local network, not authentication. If UDP is blocked, the host can export a connection JSON file; loading it validates the shape/version, tries its addresses, and checks TCP ping/pong before offering the endpoint.
+
+## Launcher waiting rooms
+
+Launcher-hosted multiplayer rooms set `manual_lobby: true`; solo and standalone servers retain automatic starts. `welcome` and `player_list` include `manual_lobby` and `host_player_id`. Player-list rows include `ready` and `is_host`. The first registered player is the host and implicitly ready. Only the host can send `lobby_start`, and only with one connected ready guest. A reset or registered-player disconnect clears guest readiness. Manual rooms accept two players. A connection-file probe never registers or emits a player-departure notice. Existing explicit rematch voting is preserved.

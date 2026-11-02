@@ -16,7 +16,7 @@ from src.common.config import (
     REPEAT_SECONDS, SERVER_PORT,
 )
 from src.common.validation import validate_nickname
-from src.common.discovery import discover_servers, load_connection_file, resolve_connection_file
+from src.common.discovery import discover_servers, load_connection_file, resolve_connection_file, save_connection_file
 from src.server.server_ui import ServerWindow
 from src.common.networking import listen_error, local_ip_addresses
 from .practice import LENGTH_OPTIONS, LEVELS, PracticeSession
@@ -29,6 +29,7 @@ from .music import BackgroundMusic
 from .opening_screen import OpeningScreen
 from .boss_ui import BossBoard, BossState
 from .art_screen import ArtScreen
+from .lobby_screen import LobbyScreen
 
 SETUP_SCREENS = ("solo", "host", "join")
 MODE_LABELS = {"versus": "1V1 BATTLE", "boss": "BOSS CO-OP"}
@@ -70,6 +71,11 @@ class ClientWindow:
         self.difficulty = "medium"
         self.total_rounds = total_rounds
         self.players: list[dict] = []
+        self.manual_lobby = False
+        self.host_player_id: str | None = None
+        self.lobby_scene: LobbyScreen | None = None
+        self._joining = self._ready_pending = False
+        self._lobby_file_dialog = False
         self.scores: list[dict] = []
         self.round_history: list[dict] = []
         self.role = self.phase = self.current_screen = ""
@@ -209,6 +215,7 @@ class ClientWindow:
         for child in self.container.winfo_children():
             child.destroy()
         self.opening_scene = None
+        self.lobby_scene = None
 
     def _scene(self, caption: str) -> tk.Frame:
         self._clear()
@@ -385,46 +392,71 @@ class ClientWindow:
             self.join_status = scene.status(790, 1230, 557, message, size=11)
             scene.button((785, 573, 986, 641), self._go_back, PALETTE["pink"])
             self.connect_button = scene.button((1001, 573, 1232, 641), self.connect, PALETTE["yellow"])
-        elif mode == "host" and self.play_mode == "boss":
-            panel = self._menu("host", "BOSS CO-OP", "HOST A BOSS FIGHT")
-            self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
-            self._label(panel, "THE DISSONANT has 80 HP. You and your ally each have 8 HP. "
-                        "Every phrase the boss plays each of you a melody: repeat yours from memory. "
-                        "Correct key = 1 boss damage. Wrong or missed key = 1 self damage.",
-                        11, PALETTE["text"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
-            self._label(panel, "Your friend picks MULTIPLAYER > BOSS CO-OP > JOIN A GAME. "
-                        "Keep this window open; do not also run server.py.",
-                        11, PALETTE["muted"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
-            self._footer(panel, message, "START HOSTING  >")
-        elif mode == "host":
-            panel = self._menu("host", "MULTIPLAYER", "HOST A GAME")
-            self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
-            self._rounds_choice(panel)
-            self._label(panel, "Starts your server and dashboard. Your friend picks JOIN A GAME. "
-                        "Keep this window open; do not also run server.py.",
-                        11, PALETTE["muted"], wraplength=440, justify="left", anchor="w").pack(fill="x", pady=(12, 0))
-            self._footer(panel, message, "START HOSTING  >")
         else:
-            panel = self._menu("join", "BOSS CO-OP" if self.play_mode == "boss" else "MULTIPLAYER",
-                               "JOIN A BOSS FIGHT" if self.play_mode == "boss" else "JOIN A GAME")
-            self._label(panel, f"Playing as {self.nickname}", 13, PALETTE["text"], wraplength=440).pack()
-            self._label(panel, "NEARBY GAMES", 11, PALETTE["cyan"]).pack(anchor="w", pady=(10, 4))
-            self.server_list = tk.Listbox(panel, height=3, bg="#030b20", fg=PALETTE["text"],
-                                          font=self._font(12), borderwidth=0, exportselection=False,
-                                          selectbackground=PALETTE["border"], highlightthickness=0)
-            self.server_list.pack(fill="x", ipady=4)
-            self.server_list.bind("<Double-Button-1>", lambda _event: self.connect())
-            tools = tk.Frame(panel, bg=PALETTE["panel"])
-            tools.pack(fill="x", pady=(8, 0))
-            self.check_button = ttk.Button(tools, text="FIND GAMES", command=self.find_games, style="Small.Arcade.TButton")
-            self.check_button.pack(side="left", fill="x", expand=True)
-            self.profile_button = ttk.Button(tools, text="LOAD FILE", command=self.load_connection, style="Small.Arcade.TButton")
-            self.profile_button.pack(side="left", fill="x", expand=True, padx=(8, 0))
+            self._show_multiplayer_setup(mode, message)
+
+    def _lobby_menu(self, page: str) -> LobbyScreen:
+        self.current_screen = "lobby" if page == "lobby" else self.mode
+        self.preview_mode = self.input_enabled = False
+        self.connect_button = self.nickname_entry = self.server_list = None
+        self._busy_widgets = []
+        self._joining = False
+        self._clear()
+        scene = LobbyScreen(
+            self.container, page=page, role="host" if self.mode == "host" else "client",
+            nickname=self.nickname, play_mode=self.play_mode, rounds=self.total_rounds,
+            can_animate=lambda: self.dialog is None and not self._lobby_file_dialog
+            and not (self.dashboard and self.dashboard.visible) and not self._closed,
+        )
+        self.lobby_scene = scene
+        scene.pack(fill="both", expand=True)
+        scene.focus_set()
+        return scene
+
+    def _show_multiplayer_setup(self, mode: str, message: str) -> None:
+        scene = self._lobby_menu(mode)
+        if mode == "host":
+            self.rounds_var = tk.IntVar(value=self.total_rounds)
+            if self.play_mode == "versus":
+                boxes = ((520, 380, 634, 424), (644, 380, 743, 424),
+                         (753, 380, 852, 424), (862, 380, 961, 424),
+                         (971, 380, 1070, 424), (1080, 380, 1180, 424))
+                self._busy_widgets += scene.choices(self.rounds_var, [
+                    (rounds, f"{rounds} STD" if rounds == DEFAULT_ROUNDS else str(rounds), box)
+                    for rounds, box in zip(ROUND_OPTIONS, boxes)],
+                    dict(SINGLE_CHOICE, back="#06132b", unit=1.6))
+                scene.status(520, 1180, 442, "Standard: 2 rounds. Extended: 4–12 rounds.",
+                             size=13, color=PALETTE["muted"])
+            else:
+                scene.status(520, 1180, 380, "THE DISSONANT · 80 HP", size=17, color=PALETTE["yellow"])
+                scene.status(520, 1180, 416, "Repeat your melody together. Each player has 8 HP.",
+                             size=14, color=PALETTE["muted"])
+            scene.status(520, 1180, 474, "Your friend can find your room on the same Wi-Fi.",
+                         size=14, color=PALETTE["muted"])
+            self.join_status = scene.status(520, 1180, 521, message, size=13)
+            scene.button((520, 565, 770, 615), "< BACK", self._go_back)
+            self.connect_button = scene.button((820, 565, 1180, 615), "START HOSTING >",
+                                                self.connect, primary=True)
+            scene.status(820, 1180, 632, "Keep this window open while hosting.",
+                         size=12, color=PALETTE["muted"])
+        else:
+            self.server_list = scene.server_list((520, 345, 1180, 425),
+                                                 on_select=self._server_selected, on_join=self.connect)
+            self.check_button = scene.button((520, 445, 842, 490), "FIND GAMES", self.find_games)
+            self.profile_button = scene.button((858, 445, 1180, 490), "LOAD FILE", self.load_connection)
             self._busy_widgets += [self.check_button, self.profile_button]
-            self._footer(panel, message, "JOIN  >")
+            self.join_status = scene.status(
+                520, 1180, 521, message or "Use the same Wi-Fi, or load a connection file.",
+                size=13, color=PALETTE["danger"] if message else PALETTE["muted"])
+            scene.button((520, 565, 770, 615), "< BACK", self._go_back)
+            self.connect_button = scene.button((820, 565, 1180, 615), "JOIN GAME >",
+                                                self.connect, color=PALETTE["pink"], primary=True)
+            scene.status(820, 1180, 632, "Join the selected room", size=12, color=PALETTE["muted"])
             self._display_servers()
-            if not self.servers:
+            if not self.servers and not message:
                 self.find_games()
+        scene.default_action = self.connect
+        scene.refresh()
 
     def _go_back(self) -> None:
         self._stop_connection()
@@ -435,21 +467,30 @@ class ClientWindow:
             self.show_menu()
 
     def _join_busy(self, busy: bool) -> None:
+        self._joining = busy
         widgets = self._busy_widgets + [self.connect_button, self.nickname_entry, self.server_list]
         for widget in widgets:
             if widget is not None:
                 widget.configure(state="disabled" if busy else "normal")
+        if self.current_screen == "join":
+            if self.connect_button is not None:
+                self.connect_button.configure(text="JOINING..." if busy and self.network else "JOIN GAME >")
+            if not busy:
+                self._server_selected()
+
+    def _server_selected(self, *_args) -> None:
+        if self.current_screen != "join" or self.connect_button is None or self.server_list is None:
+            return
+        selection = self.server_list.curselection()
+        row = self.servers[selection[0]] if selection and selection[0] < len(self.servers) else None
+        available = row is not None and int(row.get("players", 0)) < 2
+        self.connect_button.configure(state="normal" if available and not self._joining else "disabled")
 
     def _display_servers(self) -> None:
         if self.server_list is None:
             return
-        self.server_list.delete(0, "end")
-        for row in self.servers:
-            self.server_list.insert("end", f" {row['name']}  ·  {row['host']}:{row['port']}")
-        if self.servers:
-            self.server_list.selection_set(0)
-        else:
-            self.server_list.insert("end", " No games found yet.")
+        self.server_list.set_rooms(self.servers)
+        self._server_selected()
 
     def find_games(self, auto_connect=False) -> None:
         self._join_busy(True)
@@ -463,7 +504,12 @@ class ClientWindow:
         threading.Thread(target=find, name="find-games", daemon=True).start()
 
     def load_connection(self) -> None:
-        path = filedialog.askopenfilename(parent=self.root, title="Load host connection", filetypes=[("Connection file", "*.json")])
+        self._lobby_file_dialog = True
+        try:
+            path = filedialog.askopenfilename(parent=self.root, title="Load host connection",
+                                              filetypes=[("Connection file", "*.json")])
+        finally:
+            self._lobby_file_dialog = False
         if path:
             self.connect_from_file(path)
 
@@ -512,11 +558,15 @@ class ClientWindow:
                 self.join_status.configure(text=listen_error(port, exc), fg=PALETTE["danger"])
                 return
             if mode == "host":
+                self.local_game.server.name = f"{self.nickname}'s room"[:60]
                 self.host_addresses = local_ip_addresses()
                 self._create_dashboard()
         self._join_busy(True)
-        self.join_status.configure(text=f"Connecting to {host}:{port}...", fg=PALETTE["cyan"])
+        self.join_status.configure(text="Joining the room..." if mode == "join" else "Opening your room...",
+                                   fg=PALETTE["cyan"])
         self.network = NetworkClient(self.events, host, port)
+        if mode == "join":
+            self.connect_button.configure(text="JOINING...")
         self.network.connect_async(self.nickname)
 
     def _stop_connection(self) -> None:
@@ -530,32 +580,78 @@ class ClientWindow:
         self.local_game.close()
         self.player_id = None
         self.players = []
+        self.manual_lobby = False
+        self.host_player_id = None
+        self._ready_pending = False
 
-    def show_lobby(self, message: str = "Waiting for another player…") -> None:
-        self.current_screen = "lobby"
-        self.preview_mode = self.input_enabled = False
-        panel = self._scene("PLAYER LOBBY")
-        panel.place_configure(rely=.60)
-        self._set_width(panel, 700)
-        panel.configure(padx=24, pady=14)
-        self._label(panel, f"Welcome, {self.nickname}.", 18, PALETTE["cyan"], wraplength=435).pack(pady=(0, 16))
-        self._label(panel, "ONLINE PLAYERS", 11, PALETTE["yellow"]).pack(anchor="w", pady=(0, 8))
-        self.player_listbox = tk.Listbox(panel, height=3, bg="#030b20", fg=PALETTE["text"],
-                                       font=self._font(12), borderwidth=0,
-                                       selectbackground=PALETTE["border"], highlightthickness=0)
-        self.player_listbox.pack(fill="x", ipady=6)
+    def show_lobby(self, message: str = "") -> None:
+        scene = self._lobby_menu("lobby")
+        is_host = self.mode == "host" and self.local_game.server is not None
+        scene.drawers.append(lambda screen: screen.frame((520, 440, 1180, 500), "#174170", 1))
+        if is_host:
+            scene.status(535, 950, 454, "INVITE YOUR FRIEND", size=15, color=PALETTE["cyan"])
+            scene.status(535, 950, 480, "Use the same Wi-Fi or a connection file.",
+                         size=12, color=PALETTE["muted"])
+            scene.button((970, 455, 1165, 489), "SAVE CONNECTION FILE", self.save_lobby_connection)
+            # Keep the existing dashboard accessible without making it the main lobby action.
+            scene.button((1065, 215, 1180, 240), "DASHBOARD", self.show_server_dashboard)
+        else:
+            self.lobby_info = scene.status(535, 1165, 469, "", size=14, color=PALETTE["muted"])
+        self.lobby_status = scene.status(520, 1180, 534, message, size=14, color=PALETTE["yellow"])
+        scene.button((520, 565, 770, 615), "< CLOSE ROOM" if is_host else "< LEAVE ROOM",
+                     self.return_to_join)
+        self.lobby_hint = scene.status(805, 1180, 632, "", size=12, color=PALETTE["muted"])
+        if is_host:
+            self.start_lobby_button = scene.button((820, 565, 1180, 615), "START GAME >",
+                                                    self.start_lobby_match, primary=True)
+            scene.default_action = self.start_lobby_match
+        else:
+            self.ready_button = scene.button((820, 565, 1180, 615), "I'M READY",
+                                              self.toggle_lobby_ready, color=PALETTE["pink"], primary=True)
+            scene.default_action = self.toggle_lobby_ready
         self._refresh_player_list()
-        self.lobby_status = self._label(panel, message, 12, PALETTE["cyan"], wraplength=435)
-        self.lobby_status.pack(pady=(8, 8))
-        rules = ("BOSS CO-OP · The fight starts when your ally joins." if self.play_mode == "boss"
-                 else f"{self.total_rounds} rounds · The match starts when two players join.")
-        self._label(panel, rules, 11, PALETTE["muted"]).pack()
-        if self.mode == "host" and self.local_game.server:
-            friend = ("Friend: MULTIPLAYER → BOSS CO-OP → JOIN A GAME on the same network." if self.play_mode == "boss"
-                      else "Friend: choose Join a game → START on the same network.")
-            self._label(panel, friend, 11, PALETTE["yellow"], wraplength=620).pack(pady=(10, 0))
-            self._button(panel, "SERVER DASHBOARD / RESET", self.show_server_dashboard).pack(fill="x", pady=(8, 0))
-        self._button(panel, "DISCONNECT", self.return_to_join).pack(fill="x", pady=(8, 0))
+        if message:
+            self.lobby_status.configure(text=message)
+        scene.refresh()
+
+    def save_lobby_connection(self) -> None:
+        server = self.local_game.server
+        if server is None:
+            return
+        self._lobby_file_dialog = True
+        try:
+            path = filedialog.asksaveasfilename(
+                parent=self.root, title="Save host connection", initialfile="dup-me-connection.json",
+                defaultextension=".json", filetypes=[("Connection file", "*.json")])
+            if path:
+                save_connection_file(path, local_ip_addresses(), server.port, server.name)
+                self.lobby_status.configure(text="Saved. Your friend can choose Join a Game > Load File.",
+                                             fg=PALETTE["cyan"])
+        except (OSError, ValueError) as exc:
+            self.lobby_status.configure(text=f"Couldn't save the connection file: {exc}",
+                                         fg=PALETTE["danger"])
+        finally:
+            self._lobby_file_dialog = False
+
+    def toggle_lobby_ready(self) -> None:
+        if (self.current_screen != "lobby" or not self.network or not self.manual_lobby
+                or self.player_id == self.host_player_id or self._ready_pending):
+            return
+        own = next((row for row in self.players if row.get("id") == self.player_id), None)
+        if own is None:
+            return
+        if self.network.send({"type": mt.LOBBY_READY, "ready": not own.get("ready", False)}):
+            self._ready_pending = True
+            self.ready_button.configure(state="disabled")
+
+    def start_lobby_match(self) -> None:
+        if (self.current_screen != "lobby" or not self.network or not self.manual_lobby
+                or self.player_id != self.host_player_id
+                or self.start_lobby_button.instate(["disabled"])):
+            return
+        if self.network.send({"type": mt.LOBBY_START}):
+            self.start_lobby_button.configure(state="disabled", text="STARTING...")
+            self.lobby_status.configure(text="Starting the game...", fg=PALETTE["cyan"])
 
     def _create_dashboard(self) -> None:
         """Start recording the host's server activity; the dashboard stays hidden until opened."""
@@ -959,12 +1055,18 @@ class ClientWindow:
             self.state.welcome_name = self.nickname
             self.total_rounds = int(event.get("total_rounds", DEFAULT_ROUNDS))
             self.play_mode = "versus" if self.mode == "solo" else event.get("mode", "versus")
+            self.manual_lobby = bool(event.get("manual_lobby", False))
+            self.host_player_id = event.get("host_player_id")
+            self._ready_pending = False
             self.boss_state = BossState(me=self.player_id)
             self.show_lobby()
             if self.mode == "solo":
                 self.local_game.start_bot(self.nickname, self.difficulty)
         elif event_type == mt.PLAYER_LIST:
             self.players = event.get("players", [])
+            self.manual_lobby = bool(event.get("manual_lobby", self.manual_lobby))
+            self.host_player_id = event.get("host_player_id", self.host_player_id)
+            self._ready_pending = False
             self._refresh_player_list()
         elif event_type == mt.MATCH_START:
             self._close_dialog()
@@ -1055,6 +1157,9 @@ class ClientWindow:
         elif event_type == mt.PLAYER_LEFT:
             self._set_status(f"{event.get('nickname', 'A player')} disconnected.")
         elif event_type == mt.ERROR:
+            if self.current_screen == "lobby":
+                self._ready_pending = False
+                self._refresh_player_list()
             self._set_status(event.get("message", "Server rejected that action."), error=True)
             if self.current_screen in SETUP_SCREENS:
                 self._join_busy(False)
@@ -1066,9 +1171,9 @@ class ClientWindow:
             self._join_busy(False)
             self._display_servers()
             other = MODE_LABELS["boss" if self.play_mode == "versus" else "versus"]
-            message = ("Host found. Choose your game and press START." if self.servers else
+            message = ("Select a room, then choose JOIN GAME." if self.servers else
                        f"Only a {other} game was found. Go BACK and pick {other} to join it." if found else
-                       "No host found. Start Host and play on the other computer, then FIND GAMES again; or load its connection file.")
+                       "No rooms found yet. Ask your friend to start hosting, then find games again.")
             self.join_status.configure(text=message, fg=PALETTE["cyan"])
             if len(self.servers) == 1 and event.get("auto_connect"):
                 self.connect()
@@ -1100,13 +1205,41 @@ class ClientWindow:
                 getattr(self, widget).configure(text=message, fg=color)
 
     def _refresh_player_list(self) -> None:
-        if self.current_screen != "lobby":
+        if self.current_screen != "lobby" or self.lobby_scene is None:
             return
-        self.player_listbox.delete(0, "end")
-        for player in self.players:
-            status = "PLAYING" if player.get("in_match") else "READY"
-            own = " (you)" if player.get("id") == self.player_id else ""
-            self.player_listbox.insert("end", f" {player.get('nickname')}{own} · {status}")
+        scene = self.lobby_scene
+        scene.set_players(self.players, self.player_id, self.host_player_id,
+                          {row.get("id"): bool(row.get("ready")) for row in self.players})
+        scene.set_details(rounds=self.total_rounds, play_mode=self.play_mode)
+        is_host = self.mode == "host" and self.local_game.server is not None
+        guest = next((row for row in self.players if row.get("id") != self.host_player_id), None)
+        if not self.manual_lobby:
+            status = "Starting solo play..." if self.mode == "solo" else "Waiting for another player to join..."
+            if not is_host:
+                self.ready_button.configure(text="AUTO START", state="disabled")
+                self.lobby_info.configure(text="This room starts automatically when both players join.")
+            else:
+                self.start_lobby_button.configure(state="disabled")
+            hint = "The match starts automatically"
+        elif is_host:
+            can_start = len(self.players) == 2 and guest is not None and guest.get("ready", False)
+            self.start_lobby_button.configure(state="normal" if can_start else "disabled", text="START GAME >")
+            status = ("Everyone is ready. Start the game!" if can_start else
+                      "Waiting for your friend to get ready..." if guest else
+                      "Waiting for your friend to join...")
+            hint = "Everyone is ready" if can_start else "Available when your friend is ready"
+        else:
+            own = next((row for row in self.players if row.get("id") == self.player_id), None)
+            ready = bool(own and own.get("ready"))
+            self.ready_button.configure(text="✓ READY" if ready else "I'M READY",
+                                        state="normal" if own and not self._ready_pending else "disabled")
+            self.lobby_info.configure(text=("You're ready. The host will start the game." if ready else
+                                           "Mark yourself ready when you're ready to play."))
+            status = "Waiting for the host to start..." if ready else "Waiting for you to get ready..."
+            hint = "Click to cancel ready" if ready else "The host starts when everyone is ready"
+        self.lobby_status.configure(text=status, fg=PALETTE["yellow"])
+        self.lobby_hint.configure(text=hint)
+        scene.refresh()
 
     def _set_buttons(self, enabled: bool) -> None:
         self.input_enabled = self.state.enabled = enabled
@@ -1219,6 +1352,8 @@ class ClientWindow:
             self.show_menu()
         elif self.current_screen in SETUP_SCREENS + ("multiplayer", "practice"):
             self._go_back()
+        elif self.current_screen == "lobby":
+            self.return_to_join()
         return "break"
 
     def _new_dialog(self, title: str, width: int = 560) -> tk.Frame | None:

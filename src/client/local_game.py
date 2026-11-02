@@ -18,7 +18,8 @@ class LocalGame:
         self.close()
         server_class = BossFightServer if mode == 'boss' else DupMeServer
         # Solo never occupies the shared LAN port or accepts remote players.
-        server = server_class(host='127.0.0.1' if solo else '0.0.0.0', port=0 if solo else port, total_rounds=total_rounds)
+        server = server_class(host='127.0.0.1' if solo else '0.0.0.0', port=0 if solo else port,
+                              total_rounds=total_rounds, manual_lobby=not solo)
         server.start()
         self.server = server
         return server.port

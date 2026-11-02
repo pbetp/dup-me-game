@@ -8,16 +8,28 @@ from unittest.mock import patch
 from src.common.config import COLOR_NAMES, INSTRUMENTS, PIANO_KEYS
 from src.common.discovery import save_connection_file
 from src.client.art_screen import ArtChoice, ArtScreen
+from src.client.lobby_screen import LobbyScreen
 from src.client.client_ui import ClientWindow
 from src.server import server as server_module
 from src.server.server_ui import ServerWindow
 import socket
 
 
+def drain(root, seconds=.04):
+    """Run the real Tk loop for a bounded interval, including timers and redraws.
+
+    macOS Tk can keep update() draining forever beneath animated photo/Entry
+    overlays. A timed mainloop matches normal app operation and enforces
+    verification deadlines without pausing any artwork.
+    """
+    root.after(max(1, round(seconds * 1000)), root.quit)
+    root.mainloop()
+
+
 def pump(root, predicate, seconds=6):
     end = time.monotonic() + seconds
     while time.monotonic() < end:
-        root.update()
+        drain(root)
         if predicate():
             return
         time.sleep(.01)
@@ -30,16 +42,16 @@ def free_port():
         return sock.getsockname()[1]
 
 
-ART_SCREENS = ('solo', 'multiplayer', 'practice')
+ART_SCREENS = ('solo', 'multiplayer', 'practice', 'host', 'join', 'lobby')
 
 
 def layout(root, app):
     # A full update, not just idle tasks: on Windows a new page is not mapped until then.
-    root.update()
+    drain(root)
     if app.current_screen in ART_SCREENS:
         # The whole artwork is visible and the nickname box sits inside it.
         scene = app.container.winfo_children()[0]
-        assert isinstance(scene, ArtScreen) and scene.winfo_ismapped()
+        assert isinstance(scene, (ArtScreen, LobbyScreen)) and scene.winfo_ismapped()
         left, top, width, height = scene.art_box
         assert left >= 0 and top >= 0, scene.art_box
         assert left + width <= scene.winfo_width() + 1 and top + height <= scene.winfo_height() + 1
@@ -77,7 +89,7 @@ def check_choices(root, parent):
     groups = {}
 
     def collect(widget):
-        if isinstance(widget, ArtScreen):
+        if isinstance(widget, (ArtScreen, LobbyScreen)):
             for control in widget.controls:
                 if isinstance(control, ArtChoice):
                     groups.setdefault(str(control.variable), []).append(control)
@@ -106,10 +118,10 @@ def check_choices(root, parent):
         selected()
         for button in buttons:
             button.invoke()
-            root.update()
+            drain(root)
             assert selected() is button
         root.setvar(variable, original)
-        root.update()
+        drain(root)
         selected()
 
 
@@ -130,6 +142,14 @@ def run():
                 show()
                 layout(root, app)
                 check_choices(root, app.container)
+        # Animated photo + native Entry controls remain responsive on macOS Tk.
+        app.show_setup('solo')
+        scene = app.container.winfo_children()[0]
+        heartbeat = []
+        root.after(120, lambda: heartbeat.append(True))
+        first = scene.frame_index
+        drain(root, .35)
+        assert heartbeat and scene.frame_index != first, 'Solo animation starved UI callbacks'
         # Step-by-step navigation: BACK returns to the previous menu.
         app.show_setup('host')
         app._go_back()
@@ -149,7 +169,7 @@ def run():
         assert app.dashboard and app.dashboard.server is server and app.dashboard.embedded
         assert not app.dashboard.visible and not any(isinstance(w, tk.Toplevel) for w in root.winfo_children())
         app.show_server_dashboard()
-        root.update()
+        drain(root)
         assert app.dashboard.visible and app.dashboard.root.winfo_ismapped()
         pump(root, lambda: app.dashboard.online_var.get() == 'Online clients: 1')
         app._escape()
@@ -164,6 +184,12 @@ def run():
         friend._multiplayer_next('join')
         pump(root, lambda: friend.servers and not friend.connect_button.instate(['disabled']))
         friend.connect()
+        pump(root, lambda: app.current_screen == friend.current_screen == 'lobby'
+             and len(app.players) == len(friend.players) == 2)
+        assert app.start_lobby_button.instate(['disabled'])
+        friend.toggle_lobby_ready()
+        pump(root, lambda: app.start_lobby_button.instate(['!disabled']))
+        app.start_lobby_match()
         pump(root, lambda: app.current_screen == friend.current_screen == 'game')
         pump(root, lambda: app.dashboard.online_var.get() == 'Online clients: 2')
         assert app.dashboard.players.size() == 2
@@ -194,7 +220,7 @@ def run():
         assert {'YOU WIN', 'YOU LOST'} <= set(labels(app) + labels(friend))
         layout(root, app)
         app.show_match_review()
-        root.update()
+        drain(root)
         with tempfile.TemporaryDirectory() as tmp:
             path = str(Path(tmp) / 'match.csv')
             with patch('src.client.client_ui.filedialog.asksaveasfilename', return_value=path):
@@ -203,18 +229,23 @@ def run():
         app._close_dialog()
         winner = next(row['id'] for row in app.scores if row['score'] == 20)
         app.request_rematch()
-        root.update()
+        drain(root)
         assert app.current_screen == 'results'
         friend.request_rematch()
         pump(root, lambda: app.current_screen == friend.current_screen == 'game' and app.round_number == friend.round_number == 1)
         assert (app.role == 'creator') == (app.player_id == winner)
         assert 'server' in app.board.actions and 'server' not in friend.board.actions
-        # Host RESTART MATCH: scores cleared, round 1 starts again straight away, dashboard closes.
+        # Host RESET ROOM clears scores and readiness, then requires a new ready/start.
         app.show_server_dashboard()
         app.dashboard.reset_button.invoke()
         assert not app.dashboard.visible
+        pump(root, lambda: app.current_screen == friend.current_screen == 'lobby')
+        assert app.start_lobby_button.instate(['disabled'])
+        friend.toggle_lobby_ready()
+        pump(root, lambda: app.start_lobby_button.instate(['!disabled']))
+        app.start_lobby_match()
         pump(root, lambda: app.current_screen == friend.current_screen == 'game'
-             and 'restarted' in app.state.status and 'restarted' in friend.state.status)
+             and app.round_number == friend.round_number == 1)
         assert app.round_number == friend.round_number == 1 and not app.round_history
         assert [row['score'] for row in app.scores] == [0, 0]
         # Host END MATCH: results now, decided by current scores (0-0 is a draw).
@@ -232,11 +263,11 @@ def run():
         assert 'YOU WIN' in labels(app) and 'Friend forfeited the match.' in labels(app)
         # Results/menu boxes grow with the window and still fit (fullscreen-sized window).
         root.geometry('1500x860')
-        root.update()
+        drain(root)
         assert app.ui_scale > 1
         layout(root, app)
         root.geometry('960x700')
-        root.update()
+        drain(root)
         assert app.ui_scale == 1
         friend.close()
         friend = None
@@ -280,18 +311,18 @@ def run():
         app.force_exit()
         assert app.current_screen == 'menu' and not app.preview_mode
         app.show_preview()
-        root.update()
+        drain(root)
         for note, _key, _midi, _accent, index, black in PIANO_KEYS:
             x = 180 + (index + 1) * 108 if black else 180 + index * 108 + 52
             y = 520 if black else 650
             app.board.event_generate('<Button-1>', x=round(app.board.ox + x * app.board.scale), y=round(app.board.oy + y * app.board.scale))
-            root.update()
+            drain(root)
             assert app.state.pattern[-1] == note
         assert app.state.pattern == list(COLOR_NAMES)
         app.preview_undo()
         assert len(app.state.pattern) == 16
         app.show_settings()
-        root.update()
+        drain(root)
         # Settings opens inside the game window, not as a separate window.
         assert not any(isinstance(w, tk.Toplevel) for w in root.winfo_children())
         assert app.dialog.winfo_ismapped()
@@ -304,14 +335,14 @@ def run():
         app.press_color('c4')  # the board behind an open panel ignores notes
         assert app.state.pattern == before
         app.volume_slider.set(0)
-        root.update()
+        drain(root)
         assert app.audio.volume == 0
         app.volume_slider.set(70)
-        root.update()
+        drain(root)
         assert app.audio.volume == 70 and not app.audio.muted
         for instrument, button in zip(INSTRUMENTS, buttons):
             button.invoke()
-            root.update()
+            drain(root)
             assert app.audio.instrument == instrument and app.board.instrument == instrument
             assert button.instate(['selected']) and button.cget('text').startswith('\u2713 ')
             assert app.state.pattern == before
@@ -319,19 +350,19 @@ def run():
         assert left >= 0 and top >= 0 and left + width <= panel.winfo_width() + 1
         app._close_dialog()
         app.show_help()
-        root.update()
+        drain(root)
         app._close_dialog()
         app._escape()
         assert app.current_screen == 'menu' and not app.preview_mode
         app.show_settings()
-        root.update()
+        drain(root)
         check_choices(root, app.dialog)
         # Menu buttons behind the open panel are blocked until it closes.
         assert app.root.grab_current() is app.dialog
         app._close_dialog()
         assert app.root.grab_current() is None
         assert not errors, errors
-        print('PASS: main menu -> single/multiplayer -> host/join navigation; two real GUI clients automatically discovered and completed standard match; WIN/LOST, welcome, scores, role swap, review/CSV, both-vote winner-first rematch, host restart/end match, forfeit = LOST, server count/list/reset/hide/reopen, disconnect, extended AI startup, failed connection retry, connection-file fallback, 17 clickable keys, four instruments, layout at both sizes, settings/help; zero Tk callback errors.')
+        print('PASS: main menu -> single/multiplayer -> host/join navigation; two real GUI clients discovered each other, waited for client readiness and host start, and completed standard match; WIN/LOST, welcome, scores, role swap, review/CSV, both-vote winner-first rematch, host room reset/end match, forfeit = LOST, server count/list/reset/hide/reopen, disconnect, extended AI startup, failed connection retry, connection-file fallback, 17 clickable keys, four instruments, layout at both sizes, settings/help; zero Tk callback errors.')
     finally:
         if friend:
             friend.close()

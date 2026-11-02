@@ -50,6 +50,7 @@ class DupMeServer:
         advertise: bool | None = None,
         discovery_port: int = DISCOVERY_PORT,
         name: str | None = None,
+        manual_lobby: bool = False,
     ) -> None:
         self.advertise = (host == "0.0.0.0") if advertise is None else advertise
         self.discovery_port = discovery_port
@@ -61,6 +62,11 @@ class DupMeServer:
         self.port = port
         self.event_queue = event_queue
         self.game = GameEngine(total_rounds=total_rounds)
+        # The launcher opts multiplayer rooms into ready/host-start controls.
+        # Direct server users and solo games retain their automatic start flow.
+        self.manual_lobby = manual_lobby
+        self.host_player_id: str | None = None
+        self._ready_player_ids: set[str] = set()
         self.sessions: dict[str, ClientSession] = {}
         self.lock = threading.RLock()
         self.running = threading.Event()
@@ -128,6 +134,8 @@ class DupMeServer:
             self.deadline = self.pending_transition = None
             self.phase_closed = False
             self.previous_winner = None
+            self.host_player_id = None
+            self._ready_player_ids.clear()
         for session in sessions:
             session.close()
         for thread in self._threads + [t for s in sessions for t in (s.thread, s.writer)]:
@@ -214,6 +222,10 @@ class DupMeServer:
                 self._rematch_vote_locked(session)
             elif message_type == mt.FORFEIT:
                 self._forfeit_locked(session)
+            elif message_type == mt.LOBBY_READY:
+                self._lobby_ready_locked(session, message.get("ready"))
+            elif message_type == mt.LOBBY_START:
+                self._lobby_start_locked(session)
             elif message_type == mt.PONG:
                 return
             else:
@@ -233,7 +245,13 @@ class DupMeServer:
         if duplicate:
             self._error(session, "That nickname is already connected.")
             return
+        if self.manual_lobby and len(registered_players(self.sessions.values())) >= 2:
+            self._error(session, "This room is full. Find another room or wait for a place.")
+            return
         session.nickname = nickname
+        if self.manual_lobby and self.host_player_id is None:
+            self.host_player_id = session.player_id
+            self._ready_player_ids.add(session.player_id)
         session.send(
             {
                 "type": mt.WELCOME,
@@ -242,17 +260,62 @@ class DupMeServer:
                 "version": APP_VERSION,
                 "total_rounds": self.game.total_rounds,
                 "mode": self.mode,
+                "manual_lobby": self.manual_lobby,
+                "host_player_id": self.host_player_id,
             }
         )
         self._log(f"{nickname} joined from {session.address[0]}")
         self._broadcast_player_list_locked()
         self._start_match_if_possible_locked()
 
-    def _start_match_if_possible_locked(self, preferred_creator: str | None = None) -> bool:
+    def _lobby_ready_locked(self, session: ClientSession, ready: object) -> None:
+        if not self.manual_lobby or self.game.state != WAITING_FOR_PLAYERS:
+            self._error(session, "Readiness can only change in the waiting room.")
+            return
+        if session.player_id == self.host_player_id:
+            self._error(session, "The host is already ready. Use Start Game when your friend is ready.")
+            return
+        if type(ready) is not bool:
+            self._error(session, "Ready must be true or false.")
+            return
+        if ready:
+            self._ready_player_ids.add(session.player_id)
+        else:
+            self._ready_player_ids.discard(session.player_id)
+        self._broadcast_player_list_locked()
+
+    def _lobby_start_locked(self, session: ClientSession) -> None:
+        if not self.manual_lobby or self.game.state != WAITING_FOR_PLAYERS:
+            self._error(session, "Start Game is only available in the waiting room.")
+            return
+        if session.player_id != self.host_player_id:
+            self._error(session, "Only the host can start the game.")
+            return
+        if not self._lobby_start_allowed_locked(session.player_id):
+            self._error(session, "Wait for your friend to join and mark themselves ready.")
+            return
+        self._start_match_if_possible_locked(requested_by=session.player_id)
+
+    def _lobby_start_allowed_locked(self, requested_by: str | None) -> bool:
+        if not self.manual_lobby:
+            return True
+        players = registered_players(self.sessions.values())
+        return (requested_by == self.host_player_id and self.host_player_id is not None
+                and len(players) == 2
+                and all(player.player_id in self._ready_player_ids for player in players))
+
+    def _reset_lobby_readiness_locked(self) -> None:
+        self._ready_player_ids = ({self.host_player_id}
+                                  if self.host_player_id in self.sessions else set())
+
+    def _start_match_if_possible_locked(self, preferred_creator: str | None = None,
+                                      requested_by: str | None = None) -> bool:
         if self.game.state != WAITING_FOR_PLAYERS:
             return False
         available = registered_players(self.sessions.values())
         if len(available) < 2:
+            return False
+        if not self._lobby_start_allowed_locked(requested_by):
             return False
         selected = available[:2]
         player_ids = [session.player_id for session in selected]
@@ -477,7 +540,7 @@ class DupMeServer:
             self._start_creation_locked(1, already_initialized=True)
 
     def reset_game(self, reason: str = "The server reset the game.") -> None:
-        """Clear the match and scores, then restart at round 1 straight away if two players remain."""
+        """Reset the match; manual rooms return to readiness, legacy rooms restart."""
         with self.lock:
             self.game.reset()
             self.deadline = None
@@ -485,10 +548,11 @@ class DupMeServer:
             self.last_timer_value = None
             self.pending_transition = None
             self.previous_winner = None
+            self._reset_lobby_readiness_locked()
             self._broadcast({"type": mt.GAME_RESET, "reason": reason})
             self._broadcast_player_list_locked()
             self._log(reason)
-            if not self._start_match_if_possible_locked():
+            if not self._start_match_if_possible_locked() and not self.manual_lobby:
                 self.pending_transition = (time.monotonic() + 2.0, "auto_start")
             self._publish_snapshot()
 
@@ -499,15 +563,19 @@ class DupMeServer:
             session.close()
             nickname = session.nickname or session.address[0]
             was_active = session.player_id in self.game.players
+            if session.nickname is not None:
+                self._reset_lobby_readiness_locked()
             self._log(f"{nickname} disconnected: {reason}")
-            self._broadcast(
-                {"type": mt.PLAYER_LEFT, "player_id": session.player_id, "nickname": nickname}
-            )
+            if session.nickname is not None:
+                self._broadcast(
+                    {"type": mt.PLAYER_LEFT, "player_id": session.player_id, "nickname": nickname}
+                )
             if was_active:
                 self.game.reset()
                 self.deadline = None
                 self.phase_closed = False
-                self.pending_transition = (time.monotonic() + 2.0, "auto_start")
+                self.pending_transition = (None if self.manual_lobby else
+                                           (time.monotonic() + 2.0, "auto_start"))
                 self._broadcast(
                     {
                         "type": mt.GAME_RESET,
@@ -543,7 +611,11 @@ class DupMeServer:
     def _broadcast_player_list_locked(self) -> None:
         active_ids = set(self.game.players)
         players = [public_player(session, active_ids) for session in registered_players(self.sessions.values())]
-        self._broadcast({"type": mt.PLAYER_LIST, "players": players})
+        for player in players:
+            player["is_host"] = self.manual_lobby and player["id"] == self.host_player_id
+            player["ready"] = not self.manual_lobby or player["id"] in self._ready_player_ids
+        self._broadcast({"type": mt.PLAYER_LIST, "players": players,
+                         "manual_lobby": self.manual_lobby, "host_player_id": self.host_player_id})
         self._publish_snapshot()
 
     def _score_rows(self) -> list[dict[str, object]]:
@@ -584,7 +656,8 @@ class DupMeServer:
         with self.lock:
             return {"server_id": self.server_id, "name": self.name, "port": self.port,
                     "players": len(registered_players(self.sessions.values())),
-                    "total_rounds": self.game.total_rounds, "mode": self.mode}
+                    "total_rounds": self.game.total_rounds, "mode": self.mode,
+                    "manual_lobby": self.manual_lobby}
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -605,6 +678,8 @@ class DupMeServer:
             return {
                 "type": "snapshot",
                 "mode": self.mode,
+                "manual_lobby": self.manual_lobby,
+                "host_player_id": self.host_player_id,
                 "running": self.running.is_set(),
                 "online_count": len(players),
                 "connection_count": len(self.sessions),

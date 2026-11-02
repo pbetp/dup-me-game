@@ -2,7 +2,7 @@
 
 ## 1. Prepare both computers
 
-1. Extract `dup-me-rubric-ready.zip` into a new folder on each computer. Use the same release on both. Do not mix these files with an older copy.
+1. Extract `dup-me-neon-lobby-v4.3.zip` into a new folder on each computer. Use the same release on both. Do not mix these files with an older copy.
 2. Use Python 3.10+ with Tkinter. Open a terminal in the extracted `dup-me-rubric` folder. On macOS, type `python3 --version`; on Windows, `py -3 --version`.
 3. Confirm Tkinter opens a small window with `python3 -m tkinter` (Windows: `py -3 -m tkinter`), then close it. Python documents this as a quick installation check. [Python Tkinter documentation](https://docs.python.org/3/library/tkinter.html)
 4. Run `python3 play.py` (Windows: `py -3 play.py`). Alternatively, open the whole folder in PyCharm/VS Code, select a local Python interpreter and run `play.py`. Before the first run, install the animated-artwork viewer with `python3 -m pip install -r requirements.txt` (Windows: `py -3 -m pip install -r requirements.txt`). Do not run from inside the ZIP.
@@ -37,7 +37,7 @@ AI play is useful for rehearsal and the AI feature demonstration. The fundamenta
 | Joined | Dashboard count becomes 2; both names appear | Welcome and game appear; no IP/port entry |
 | Play | Create/repeat as instructed | Create/repeat as instructed |
 
-Keep A's main game window open throughout. Both clients communicate with the server; they do not send game messages directly to each other. Do **not** also run `server.py` while using **HOST A GAME**.
+After joining, B presses **I'M READY** in the waiting room and A presses **START GAME**. Keep A's main game window open throughout. Both clients communicate with the server; they do not send game messages directly to each other. Do **not** also run `server.py` while using **HOST A GAME**.
 
 ### If FIND GAMES finds nothing
 
@@ -102,7 +102,7 @@ Fill this in after testing the actual machines; these boxes are intentionally no
 | Results | Both names/scores and WIN/LOST (or DRAW); REMATCH button | ☐ |
 | Both votes | One vote waits; second starts the rematch | ☐ |
 | Winner starts | Previous winner is creator in rematch round one | ☐ |
-| Restart | During a scored game, RESTART MATCH clears scores and round 1 starts again immediately | ☐ |
+| Reset | During a launcher-hosted game, RESET ROOM clears scores and returns both players to the waiting room; B marks ready, then A starts again | ☐ |
 | End match | END MATCH shows results for both players, decided by current scores | ☐ |
 | Exit | A player presses EXIT mid-match: they see LOST, the opponent sees WIN | ☐ |
 | Disconnect | Close B; A returns to lobby and count falls to 1; rejoin works | ☐ |
