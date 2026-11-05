@@ -378,7 +378,10 @@ class LobbyScreen(ArtScreen):
                   "join": "Find a room and play with a friend.",
                   "lobby": ("Team up against THE DISSONANT" if self.play_mode == "boss"
                             else f"{self.rounds} rounds · {'Standard' if self.rounds == 2 else 'Extended'}")}[self.page]
-        self.text(870, 283, helper, 12, MUTED, anchor="w")
+        if self.page in ("host", "join"):
+            self._draw_welcome(870, 284, 350)
+        else:
+            self.text(870, 283, helper, 12, MUTED, anchor="w")
         self.rect(870, 302, 350, 1, CYAN)
         if self.page == "host":
             self.label(870, 316, "PLAYING AS", 1.6, CYAN, center=False)
@@ -399,6 +402,24 @@ class LobbyScreen(ArtScreen):
             players = sorted(self._players, key=lambda p: p.get("id") != self._host_id)
             for index in range(2):
                 self._draw_player(index, players[index] if index < len(players) else None)
+
+    def _text_width(self, value, size, bold=False):
+        """Width of canvas text in art units (matches PixelCanvas.text font)."""
+        font = tkfont.Font(root=self, family="Courier", size=-max(9, round(size * self.scale)),
+                           weight="bold" if bold else "normal")
+        return font.measure(value) / max(self.scale, 1e-6)
+
+    def _draw_welcome(self, x, y, width):
+        """'Welcome, <name>!' greeting shown on the host/join pages."""
+        size = 15
+        lead, bang = "Welcome, ", "!"
+        lead_w = self._text_width(lead, size, bold=True)
+        bang_w = self._text_width(bang, size, bold=True)
+        name = self.fit_text(self.nickname or "Player", max(40, width - lead_w - bang_w), size)
+        name_w = self._text_width(name, size, bold=True)
+        self.text(x, y, lead, size, GOLD, anchor="w", bold=True)
+        self.text(x + lead_w, y, name, size, PINK, anchor="w", bold=True)
+        self.text(x + lead_w + name_w, y, bang, size, GOLD, anchor="w", bold=True)
 
     def _draw_player(self, index, player):
         x0, y0 = 870, 340 + index * 75
