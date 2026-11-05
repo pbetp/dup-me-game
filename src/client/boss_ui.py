@@ -391,6 +391,8 @@ class BossBoard(GameBoard):
                 self._corners(box, PALETTE["pink"] if name == "exit" else PALETTE["cyan"])
         if "server" in self.actions:
             self.control("server", 212, 918, 150, 58, "SERV")
+        if "reset" in self.actions:
+            self.control("reset", 1412, 918, 154, 58, "RESET", PALETTE["yellow"])
 
     def _draw_flash(self) -> None:
         self.delete("flash")

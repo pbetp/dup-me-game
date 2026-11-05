@@ -235,6 +235,19 @@ def run():
         pump(root, lambda: app.current_screen == friend.current_screen == 'game' and app.round_number == friend.round_number == 1)
         assert (app.role == 'creator') == (app.player_id == winner)
         assert 'server' in app.board.actions and 'server' not in friend.board.actions
+        # Host FORCE RESET: straight back to round 1 of the same match, no lobby, no reconnect.
+        assert 'reset' in app.board.actions and 'reset' not in friend.board.actions
+        assert any(name == 'reset' for name, _box, _cb in app.board.regions)
+        creator = app if app.role == 'creator' else friend
+        creator.press_color('c4')
+        pump(root, lambda: len(app.state.pattern) == len(friend.state.pattern) == 1)
+        network = friend.network
+        app.board.actions['reset']()
+        pump(root, lambda: app.current_screen == friend.current_screen == 'game'
+             and app.round_number == friend.round_number == 1 and not app.state.pattern and not friend.state.pattern)
+        assert friend.network is network and len(app.players) == 2
+        assert [row['score'] for row in app.scores] == [0, 0]
+        assert 'restarted' in app.state.status and 'restarted' in friend.state.status
         # Host RESET ROOM clears scores and readiness, then requires a new ready/start.
         app.show_server_dashboard()
         app.dashboard.reset_button.invoke()
@@ -284,6 +297,11 @@ def run():
         assert app.local_game.bot is not None and app.local_game.server.host == '127.0.0.1'
         assert app.state.total_rounds == 8
         assert app.difficulty == 'hard'
+        # Solo FORCE RESET restarts against the same bot.
+        bot = app.local_game.bot
+        app.board.actions['reset']()
+        pump(root, lambda: app.current_screen == 'game' and app.round_number == 1 and 'restarted' in app.state.status)
+        assert app.local_game.bot is bot and app.state.total_rounds == 8
         app.return_to_join()
         assert app.current_screen == 'solo'
         app.servers = [{'name': 'Unavailable', 'host': '127.0.0.1', 'port': free_port()}]

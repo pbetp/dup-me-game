@@ -55,7 +55,11 @@ class BossFightServer(DupMeServer):
         self._broadcast_player_list_locked()
         return True
 
-    def _announce_match_locked(self) -> None:
+    def _restart_locked(self, players: list[str], first_creator: str | None, reason: str) -> None:
+        self.game.begin_match(players)
+        self._announce_match_locked(reason)
+
+    def _announce_match_locked(self, reason: str = "") -> None:
         self.deadline = None
         self.phase_closed = False
         self.pending_transition = None
@@ -67,6 +71,7 @@ class BossFightServer(DupMeServer):
             "boss_hp": self.game.boss_hp,
             "boss_max_hp": self.game.boss_max_hp,
             "total_rounds": self.game.total_rounds,
+            "reason": reason,
         })
         self._log(f"Boss fight started: {self._name(self.game.players[0])} + "
                   f"{self._name(self.game.players[1])} vs {BOSS_NAME}")

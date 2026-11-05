@@ -404,6 +404,9 @@ class GameBoard(PixelCanvas):
             self.icon(x + 48, y + h / 2, "exit", 3, p["pink"])
             self.pixels(x + 112, y + h / 2 - 10, "EXIT", 3, p["pink"], center=True, shadow=False)
             self.region("exit", x, y, w, h, self.actions["exit"])
+        if "reset" in self.actions:
+            # Force reset (bottom-right): start again from round / melody 1.
+            self.control("reset", 1240, 732, 176, 56, "RESET", p["yellow"])
         self.pixels(720, 118, self._title(), 6, turn, center=True)
         self.label(720, 176, s.instruction, 2.5, p["text"])
         self._scores(turn)

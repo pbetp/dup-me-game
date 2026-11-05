@@ -64,6 +64,20 @@ pump(root, lambda: boss.phase == "result")
 assert boss.team_damage == len(mine) - 1 + len(theirs), boss.team_damage
 assert boss.hp_lost[boss.me] == 1
 
+# Host FORCE RESET: the fight restarts at phrase 1 with full HP, same connections.
+assert "reset" in app.board.actions and "reset" not in friend.board.actions
+app.board.actions["reset"]()
+pump(root, lambda: app.boss_state.phrase == friend.boss_state.phrase == 1
+     and app.boss_state.boss_hp == app.boss_state.boss_max, 8)
+boss = app.boss_state
+assert "restarted" in app.boss_state.status and "restarted" in friend.boss_state.status
+pump(root, lambda: boss.phase == "show" and boss.shown == len(boss.notes[boss.me]), 8)
+pump(root, lambda: boss.phase == friend.boss_state.phase == "repeat", 8)
+for player in (app, friend):
+    for note in app.local_game.server.game.phrases[player.player_id]:
+        player.press_color(note)
+pump(root, lambda: boss.phase == "result")
+
 # Jump ahead: leave the boss on 2 HP and finish it in the next phrase.
 server = app.local_game.server
 with server.lock:

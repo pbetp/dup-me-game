@@ -105,6 +105,35 @@ class ServerIntegrationTests(unittest.TestCase):
         rematch = self.wait_for(alice, mt.MATCH_START)
         self.assertEqual(rematch["first_creator_id"], winner_id)
 
+    def test_force_reset_returns_to_round_one_without_reconnecting(self):
+        self.assertFalse(self.server.restart_match())
+        alice = self.connect("Alice")
+        alice_welcome = self.wait_for(alice, mt.WELCOME)
+        bob = self.connect("Bob")
+        bob_welcome = self.wait_for(bob, mt.WELCOME)
+        sockets_by_id = {alice_welcome["player_id"]: alice, bob_welcome["player_id"]: bob}
+        starts = [self.wait_for(sock, mt.ROUND_START, "create") for sock in (alice, bob)]
+        pattern = self.play_creation(sockets_by_id, starts)
+        repeat = self.wait_for(alice, mt.ROUND_START, "repeat")
+        self.wait_for(bob, mt.ROUND_START, "repeat")
+        send_message(sockets_by_id[repeat["repeater_id"]],
+                     {"type": mt.REPEAT_STEP, "color": pattern[0], "turn_id": repeat["turn_id"]})
+        self.wait_for(alice, mt.REPEAT_FEEDBACK)
+
+        self.assertTrue(self.server.restart_match())
+        for sock in (alice, bob):
+            start = self.wait_for(sock, mt.MATCH_START)
+            self.assertEqual(start["first_creator_id"], starts[0]["creator_id"])
+            self.assertEqual([row["score"] for row in start["players"]], [0, 0])
+            round_start = self.wait_for(sock, mt.ROUND_START, "create")
+            self.assertEqual((round_start["round"], round_start["total_rounds"]), (1, 2))
+            self.assertNotEqual(round_start["turn_id"], repeat["turn_id"])
+        # Moves from before the reset are rejected.
+        send_message(sockets_by_id[repeat["repeater_id"]],
+                     {"type": mt.REPEAT_STEP, "color": pattern[1], "turn_id": repeat["turn_id"]})
+        self.assertIn("earlier turn", self.wait_for(sockets_by_id[repeat["repeater_id"]], mt.ERROR)["message"])
+        self.assertEqual(len(self.server.sessions), 2)
+
     def test_twelve_round_match_all_notes_and_rematch_keep_selected_total(self):
         self.server.stop()
         self.server = DupMeServer(host="127.0.0.1", port=0, total_rounds=12)

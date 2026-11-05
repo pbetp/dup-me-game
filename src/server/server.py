@@ -509,6 +509,37 @@ class DupMeServer:
             self._finish_match_locked(reason=reason)
             return True
 
+    def restart_match(self, reason: str = "The host restarted the match from round 1.") -> bool:
+        """Force reset: the same pair starts again from round 1 without reconnecting."""
+        with self.lock:
+            players = list(self.game.players)
+            if len(players) != 2 or any(player_id not in self.sessions for player_id in players):
+                return False
+            # The boss engine has no creator; 1v1 keeps who created first.
+            first_creator = getattr(self.game, "first_creator", None)
+            self._log(reason)
+            self.game.reset()
+            self._restart_locked(players, first_creator, reason)
+            self._broadcast_player_list_locked()
+            return True
+
+    def _restart_locked(self, players: list[str], first_creator: str | None, reason: str) -> None:
+        creator = first_creator if first_creator in players else random.choice(players)
+        self.game.begin_match(players, creator)
+        self.deadline = None
+        self.phase_closed = False
+        self.pending_transition = None
+        self._send_to_active(
+            {
+                "type": mt.MATCH_START,
+                "players": self._score_rows(),
+                "first_creator_id": creator,
+                "total_rounds": self.game.total_rounds,
+                "reason": reason,
+            }
+        )
+        self._start_creation_locked(1, already_initialized=True)
+
     def _rematch_vote_locked(self, session: ClientSession) -> None:
         if self.game.state != WAITING_FOR_REMATCH or session.player_id not in self.game.players:
             self._error(session, "A rematch vote is not allowed now.")

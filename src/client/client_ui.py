@@ -677,6 +677,8 @@ class ClientWindow:
         }
         if self.mode == "host" and self.local_game.server:
             actions["server"] = self.show_server_dashboard
+        if self._can_force_reset():
+            actions["reset"] = self.force_reset
         self.board = GameBoard(self.container, self.state, actions)
         self.board.pack(fill="both", expand=True)
         self._refresh_board()
@@ -692,6 +694,8 @@ class ClientWindow:
         }
         if self.mode == "host" and self.local_game.server:
             actions["server"] = self.show_server_dashboard
+        if self._can_force_reset():
+            actions["reset"] = self.force_reset
         # Keys are gated by BossState.can_play, so input stays switched on here.
         self.input_enabled = True
         self.board = BossBoard(self.container, self.boss_state, actions)
@@ -703,6 +707,9 @@ class ClientWindow:
         self.turn_id = event.get("turn_id", "")
         self._cancel_practice_jobs()
         self.boss_state.begin(event)
+        (notice, when), self._notice = self._notice, ("", 0.0)
+        if notice and self.boss_state.phrase == 1 and time.monotonic() - when < 3:
+            self.boss_state.status = notice
         if self.current_screen != "boss_game":
             self.show_boss_game()
         if self.boss_state.phase == "show":
@@ -766,7 +773,8 @@ class ClientWindow:
                                 instruction="", welcome_name=self.nickname)
         self._clear()
         actions = {"note": self.press_color, "settings": self.show_settings, "help": self.show_help,
-                   "fullscreen": self.toggle_fullscreen, "exit": self.end_practice, "replay": self.practice_replay}
+                   "fullscreen": self.toggle_fullscreen, "exit": self.end_practice, "replay": self.practice_replay,
+                   "reset": self.start_practice}
         self.board = PracticeBoard(self.container, self.state, actions, self.practice.stats)
         self.board.pack(fill="both", expand=True)
         self.board.focus_set()
@@ -923,6 +931,17 @@ class ClientWindow:
         else:
             self.return_to_join()
 
+    def _can_force_reset(self) -> bool:
+        """Solo and the host own the server, so only they can restart; a joined guest cannot."""
+        return not self.preview_mode and self.mode in ("solo", "host") and self.local_game.server is not None
+
+    def force_reset(self) -> None:
+        """Restart the live match from round 1 with the same players, keeping the connection."""
+        if self.dialog is not None or not self._can_force_reset():
+            return
+        if not self.local_game.server.restart_match():
+            self._set_status("Nothing to reset yet.", error=True)
+
     def preview_undo(self) -> None:
         if self.preview_mode and self.state.pattern:
             self.state.pattern.pop()
@@ -1068,6 +1087,9 @@ class ClientWindow:
             self._close_dialog()
             self.round_history = []
             self.scores = event.get("players", [])
+            if event.get("reason"):
+                # A force reset: the next round-1 screen says why the match restarted.
+                self._notice = (event["reason"], time.monotonic())
             if event.get("mode") == "boss":
                 self.play_mode = "boss"
                 self.boss_state = BossState(me=self.player_id or "")

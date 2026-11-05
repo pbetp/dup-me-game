@@ -120,6 +120,21 @@ class BossServerTests(unittest.TestCase):
         self.assertEqual(final["result"], "loss")
         self.assertIn("Bob left", final["reason"])
 
+    def test_force_reset_restarts_fight_at_full_hp(self):
+        alice, bob = self.connect("Alice"), self.connect("Bob")
+        repeat = self.wait_for(alice, mt.BOSS_PHRASE, "repeat")
+        send_message(alice, {"type": mt.REPEAT_STEP, "color": "c4", "turn_id": repeat["turn_id"]})
+        self.wait_for(bob, mt.BOSS_FEEDBACK)
+        self.assertTrue(self.server.restart_match())
+        for sock in (alice, bob):
+            start = self.wait_for(sock, mt.MATCH_START)
+            self.assertEqual(start["boss_hp"], BOSS_MAX_HP)
+            self.assertIn("restarted", start["reason"])
+            show = self.wait_for(sock, mt.BOSS_PHRASE, "show")
+            self.assertEqual(show["phrase"], 1)
+            self.assertEqual({row["hp"] for row in show["players"]}, {PLAYER_MAX_HP})
+        self.assertEqual(len(self.server.sessions), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
